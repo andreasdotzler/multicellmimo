@@ -55,15 +55,15 @@ def inv_sqrtm(A):
 
 def ptp_capacity_cvx(H, P):
     Nrx, Ntx = H.shape
-    Q = cp.Variable([Ntx, Ntx], complex=True)
+    Cov = cp.Variable([Ntx, Ntx], complex=True)
     I = np.eye(Ntx)
-    cost = cp.log_det(I + Q @ H.conj().T @ H)
-    power = cp.real(cp.trace(Q)) <= P
-    positivity = Q >> 0
+    cost = cp.log_det(I + Cov @ H.conj().T @ H)
+    power = cp.real(cp.trace(Cov)) <= P
+    positivity = Cov >> 0
     constraints = [power, positivity]
     prob = cp.Problem(cp.Maximize(cost), constraints)
     prob.solve(solver=cp.SCS, eps=1e-9)
-    return prob.value / np.log(2), Q.value
+    return prob.value / np.log(2), Cov.value
 
 
 def ptp_capacity(H, P):
@@ -71,9 +71,10 @@ def ptp_capacity(H, P):
     ei_d, V_d = np.linalg.eigh(HH_d)
     ei_d = [max(e, 0) for e in ei_d]
     power = water_filling_iter(ei_d, P)
-    Q = V_d @ np.diag(power) @ V_d.conj().T
+    Cov = V_d @ np.diag(power) @ V_d.conj().T
     rate = sum(math.log(1 + p * e, 2) for p, e in zip(power, ei_d))
-    return rate, Q
+    # TODO should return Uplink and Downlink covariance
+    return rate, Cov
 
 
 def water_filling_cvx(ei, P):
@@ -120,40 +121,39 @@ def sort_channels(Hs, weights):
     return Hs, alphas
 
 
-def MAC(Hs, P, weights):
-    Qs = []
+def MAC_cvx(Hs, P, weights):
+    MAC_Covs = []
     Xs = []
     Hs, alphas = sort_channels(Hs, weights)
 
     for H in Hs:
         Nrx, Ntx = H.shape
-        Qs.append(cp.Variable([Ntx, Ntx], complex=True))
+        MAC_Covs.append(cp.Variable([Ntx, Ntx], complex=True))
         Xs.append(cp.Variable([Nrx, Nrx], complex=True))
     I = np.eye(Nrx)
     cost = cp.sum([alpha * cp.log_det(X) for X, alpha in zip(Xs, alphas)])
-    # cost = cp.sum([cp.log_det(I + Q @ H.conj().T @ H) for Q in Qs])
     mat = []
     matrix_equal = I
-    for X, Q, H in zip(Xs, Qs, Hs):
-        matrix_equal += H @ Q @ H.conj().T
+    for X, MAC_Cov, H in zip(Xs, MAC_Covs, Hs):
+        matrix_equal += H @ MAC_Cov @ H.conj().T
         mat.append(X << matrix_equal)
-    power = cp.sum([cp.real(cp.trace(Q)) for Q in Qs]) <= P
-    positivity = [(Q >> 0) for Q in Qs]
+    power = cp.sum([cp.real(cp.trace(MAC_Cov)) for MAC_Cov in MAC_Covs]) <= P
+    positivity = [(MAC_Cov >> 0) for MAC_Cov in MAC_Covs]
     positivity += [(X >> 0) for X in Xs]
     constraints = mat + [power] + positivity
     prob = cp.Problem(cp.Maximize(cost), constraints)
     prob.solve(solver=cp.SCS, eps=1e-12)
-    Qs = [Q.value for Q in Qs]
-    return sum_rate(Qs, Hs)[0], Qs
+    MAC_Covs = [MAC_Cov.value for MAC_Cov in MAC_Covs]
+    return MAC_rates(MAC_Covs, Hs)[0], MAC_Covs
 
 
-def sum_rate(Qs, Hs):
+def MAC_rates(MAC_Covs, Hs):
     Nrx = Hs[0].shape[0]
     Z = np.eye(Nrx)
     rates = []
     Zs = []
-    for Q, H in zip(Qs, Hs):
-        Znew = Z + H @ Q @ H.conj().T
+    for MAC_Cov, H in zip(MAC_Covs, Hs):
+        Znew = Z + H @ MAC_Cov @ H.conj().T
         Zs.append(Znew)
         rate = (np.linalg.slogdet(Znew)[1] - np.linalg.slogdet(Z)[1]) / np.log(2)
         rates.append(rate)
@@ -165,26 +165,24 @@ def project_eigenvalues_to_given_sum_cvx(e, P):
     # setup the objective and constraints and solve the problem
     x = cp.Variable(len(e))
     obj = cp.Minimize(cp.sum_squares(e - x))
-    constr = [x >= 0, cp.sum(x) == P]
-    prob = cp.Problem(obj, constr)
+    constraints = [x >= 0, cp.sum(x) == P]
+    prob = cp.Problem(obj, constraints)
     prob.solve()
     return np.array(x.value).squeeze()
 
 
-def project_Q_cvx(X, P):
-    Q = cp.Variable([X.shape[0], X.shape[0]], complex=True)
-    obj = cp.Minimize(cp.sum_squares(Q - X))
-    power = cp.real(cp.trace(Q)) <= P
-    positivity = Q >> 0
+def project_covariance_cvx(X, P):
+    Cov = cp.Variable([X.shape[0], X.shape[0]], complex=True)
+    obj = cp.Minimize(cp.sum_squares(Cov - X))
+    power = cp.real(cp.trace(Cov)) <= P
+    positivity = Cov >> 0
     constraints = [power, positivity]
     prob = cp.Problem(obj, constraints)
     prob.solve(solver=cp.SCS, eps=1e-9)
-    return Q.value
+    return Cov.value
 
 
-def maximize_weighted_sum_rate_in_Q(
-    Hs, P, weights, rate_threshold=1e-6, max_iterations=30
-):
+def MAC(Hs, P, weights, rate_threshold=1e-6, max_iterations=30):
     # start with no rate change
     rate_change = 0
     # initialize outer and inner iterations
@@ -193,14 +191,14 @@ def maximize_weighted_sum_rate_in_Q(
     Hs, alphas = sort_channels(Hs, weights)
     sum_transmit_antennas = sum(H.shape[1] for H in Hs)
     Nrx = Hs[0].shape[0]
-    Qs = [P / sum_transmit_antennas * np.eye(H.shape[1]) for H in Hs]
+    MAC_Covs = [P / sum_transmit_antennas * np.eye(H.shape[1]) for H in Hs]
 
     # initialize step_size parameter
     d = 1
     d0 = 1
     # compute Z matrix
     for outer_i in range(max_iterations):
-        rates, Zs = sum_rate(Qs, Hs)
+        rates, Zs = MAC_rates(MAC_Covs, Hs)
         last_weighted_rate = sum(
             [w * r for w, r in zip(sorted(weights, reverse=True), rates)]
         )
@@ -208,25 +206,22 @@ def maximize_weighted_sum_rate_in_Q(
         Z_invs = [np.linalg.inv(Z) for Z in Zs]
         I = np.eye(Nrx)
 
-        # compute the gradients^*
-
-        dQ_trace = 0
-        dQs = []
-        for k, (Q, H) in enumerate(zip(Qs, Hs)):
-            dQ = np.zeros([Q.shape[0], Q.shape[0]])
+        # compute the gradients
+        dMAC_Covs = []
+        for k, (MAC_Cov, H) in enumerate(zip(MAC_Covs, Hs)):
+            dMAC_Cov = np.zeros([MAC_Cov.shape[0], MAC_Cov.shape[0]])
             for Z_inv, alpha in zip(Z_invs[k:], alphas[k:]):
-                dQ = dQ + 1 / np.log(2) * alpha * H.conj().T @ Z_inv @ H
-            dQs.append(dQ)
-        dQ_trace = sum([np.trace(dQ) for dQ in dQs])
-        dQs = [P / dQ_trace * dQ for dQ in dQs]
+                dMAC_Cov = dMAC_Cov + 1 / np.log(2) * alpha * H.conj().T @ Z_inv @ H
+            dMAC_Covs.append(dMAC_Cov)
+        dMAC_Covs_trace = sum([np.trace(dMAC_Cov) for dMAC_Cov in dMAC_Covs])
+        dMAC_Covs = [P / dMAC_Covs_trace * dMAC_Cov for dMAC_Cov in dMAC_Covs]
         for inner_i in range(max_iterations):
             # now update the covariances
-            updated_Qs = [Q + d0 / d * dQ for Q, dQ in zip(Qs, dQs)]
-            Q_cvx = project_Q_cvx(updated_Qs[0], P)
+            updated_MAC_Covs = [MAC_Cov + d0 / d * dMAC_Cov for MAC_Cov, dMAC_Cov in zip(MAC_Covs, dMAC_Covs)]
             eigs = []
             VVs = []
-            for uQ in updated_Qs:
-                eig, VV = np.linalg.eigh(uQ)
+            for uMAC_Cov in updated_MAC_Covs:
+                eig, VV = np.linalg.eigh(uMAC_Cov)
                 eigs.append(eig)
                 VVs.append(VV)
             # project to constraint set: operate on eigenvalues
@@ -234,23 +229,21 @@ def maximize_weighted_sum_rate_in_Q(
             eigenvalues = [item for sublist in eigs for item in sublist]
             projected = project_eigenvalues_to_given_sum_cvx(eigenvalues, P)
             assert sum(projected) <= P * 1.01
-            # FIXME; the hole projection needs rework
-            subtract = (sum(eigenvalues) - P) / sum(projected > 1e-3)
             # update
-            updated_Qs = []
+            updated_MAC_Covs = []
             sum_eigs = 0
             offset = 0
             for eig, VV in zip(eigs, VVs):
                 new_eigs = projected[offset : offset + len(eig)]
                 offset += len(eig)
                 sum_eigs += sum(new_eigs)
-                updated_Qs.append(VV @ np.diag(new_eigs) @ VV.conj().T)
+                updated_MAC_Covs.append(VV @ np.diag(new_eigs) @ VV.conj().T)
             assert sum_eigs <= P * 1.01
-            rates = sum_rate(updated_Qs, Hs)[0]
+            rates = MAC_rates(updated_MAC_Covs, Hs)[0]
             this_weighted_rate = sum(
                 [w * r for w, r in zip(sorted(weights, reverse=True), rates)]
             )
-            this_weighted_rate_cvs = sum(sum_rate([Q_cvx], Hs)[0])
+            this_weighted_rate_cvs = sum(MAC_rates(updated_MAC_Covs, Hs)[0])
             LOGGER.info(
                 f"Competed inner iteration {inner_i} - current obj {this_weighted_rate} - last obj {last_weighted_rate}"
             )
@@ -259,12 +252,12 @@ def maximize_weighted_sum_rate_in_Q(
             else:
                 rate_change = this_weighted_rate - last_weighted_rate
                 last_weighted_rate = this_weighted_rate
-                Qs = updated_Qs
+                MAC_Covs = updated_MAC_Covs
                 break
         LOGGER.info(
             f"Competed outer iteration {outer_i} - current obj {this_weighted_rate} - rate change {rate_change}"
         )
         if rate_change / this_weighted_rate < rate_threshold:
             break
-    rates = sum_rate(Qs, Hs)[0]
-    return rates, Qs
+    rates = MAC_rates(MAC_Covs, Hs)[0]
+    return rates, MAC_Covs
