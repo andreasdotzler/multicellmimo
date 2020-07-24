@@ -8,49 +8,57 @@ import pytest
 LOGGER = logging.getLogger(__name__)
 
 
-def MACtoBCtransformation(Hs, MAC_Cov, order):
-    BS_antennas = Hs[0].shape[1]
-    BC_Cov = [None for _ in MAC_Cov]
-    for ms, k in enumerate(order):
-        H = Hs[k]
-        MS_antennas = H.shape[0]
 
-        # Compute B
-        temp_sum = np.eye(BS_antennas)
-        for ll in order[k + 1 :]:
-            temp_sum = temp_sum + Hs[ll].conj().T @ MAC_Cov[ll] @ Hs[ll]
-        B = temp_sum
+def MACtoBCtransformation(Hs, MAC_Cov, MAC_decoding_order):
+    BS_antennas = Hs[0].shape[1]
+    BC_Covs = []
+    for k, ms in enumerate(MAC_decoding_order):
+        H = Hs[ms]
+        MS_antennas = H.shape[0]
 
         # Compute A
         temp_sum = np.eye(MS_antennas)
-        for ll in order[0:k]:
-            temp_sum = temp_sum + Hs[k] @ BC_Cov[ll] @ Hs[k].conj().T
+        for BC_Cov in BC_Covs:
+            temp_sum = temp_sum + Hs[ms] @ BC_Cov @ Hs[ms].conj().T
         A = temp_sum
 
+        # Compute B
+        temp_sum = np.eye(BS_antennas)
+        for j in MAC_decoding_order[k + 1 :]:
+            temp_sum = temp_sum + Hs[j].conj().T @ MAC_Cov[j] @ Hs[j]
+        B = temp_sum
+
         # Take SVD of effective channel
-        Hms_eff = inv_sqrtm(B) @ Hs[k].conj().T @ inv_sqrtm(A)
+        Hms_eff = inv_sqrtm(B) @ Hs[ms].conj().T @ inv_sqrtm(A)
         F, D, GH = np.linalg.svd(Hms_eff)
         Fms = F[:, : len(D)]
         Gms = GH[: len(D), :].conj().T
         np.testing.assert_almost_equal(Hms_eff, Fms @ np.diag(D) @ Gms.conj().T)
         # Compute downlink covariance (equation 35)
-        BC_Cov[k] = (
-            inv_sqrtm(B)
-            @ Fms
-            @ Gms.conj().T
-            @ inv_sqrtm(A)
-            @ MAC_Cov[k]
-            @ inv_sqrtm(A)
-            @ Gms
-            @ Fms.conj().T
-            @ inv_sqrtm(B)
+        BC_Covs.append(
+            (
+                inv_sqrtm(B)
+                @ Fms
+                @ Gms.conj().T
+                @ sqrtm(A)
+                @ MAC_Cov[ms]
+                @ sqrtm(A)
+                @ Gms
+                @ Fms.conj().T
+                @ inv_sqrtm(B)
+            )
         )
-    return BC_Cov
+    return [BC_Covs[k] for k in MAC_decoding_order]
 
 
 def inv_sqrtm(A):
     ei_d, V_d = np.linalg.eigh(A)
     return V_d @ np.diag(ei_d ** -0.5) @ V_d.conj().T
+
+
+def sqrtm(A):
+    ei_d, V_d = np.linalg.eigh(A)
+    return V_d @ np.diag(ei_d ** 0.5) @ V_d.conj().T
 
 
 def ptp_capacity_cvx(H, P):
@@ -110,21 +118,30 @@ def water_filling_iter(ei, P):
     return powers[powers >= 0]
 
 
-def sort_channels(Hs, weights):
+def argsort(weights, reverse=False):
     # sort channels
     # https://stackoverflow.com/a/6618543
-    Hs = [
-        H for _, H in sorted(zip(weights, Hs), reverse=True, key=lambda pair: pair[0])
+    return [
+        o
+        for o, _ in sorted(
+            enumerate(weights), reverse=reverse, key=lambda pair: pair[1]
+        )
     ]
+
+
+def sort_channels(Hs, weights):
+
+    order = argsort(weights, reverse=True)
+    Hs = [Hs[k] for k in order]
     alphas = (-np.diff(sorted(weights, reverse=True))).tolist()
     alphas.append(weights[-1])
-    return Hs, alphas
+    return Hs, alphas, list(reversed(order))
 
 
 def MAC_cvx(Hs, P, weights):
     MAC_Covs = []
     Xs = []
-    Hs, alphas = sort_channels(Hs, weights)
+    Hs, alphas, order = sort_channels(Hs, weights)
 
     for H in Hs:
         Nrx, Ntx = H.shape
@@ -143,11 +160,26 @@ def MAC_cvx(Hs, P, weights):
     constraints = mat + [power] + positivity
     prob = cp.Problem(cp.Maximize(cost), constraints)
     prob.solve(solver=cp.SCS, eps=1e-12)
-    MAC_Covs = [MAC_Cov.value for MAC_Cov in MAC_Covs]
-    return MAC_rates(MAC_Covs, Hs)[0], MAC_Covs
+    MAC_Covs_sorted = [Cov.value for Cov in MAC_Covs]
+    MAC_Covs = [None for _ in order]
+    for Cov, o in zip(MAC_Covs_sorted, order):
+        MAC_Covs[o] = Cov
+    rates = MAC_rates(MAC_Covs, Hs, order)
+    return rates, MAC_Covs, order
 
 
-def MAC_rates(MAC_Covs, Hs):
+def MAC_rates(MAC_Covs, Hs, MAC_decoding_order):
+    order = list(reversed(MAC_decoding_order))
+    Hs_sorted = [Hs[k] for k in order]
+    MAC_Covs_sorted = [MAC_Covs[k] for k in order]
+    rates_sorted = MAC_rates_ordered(MAC_Covs_sorted, Hs_sorted)[0]
+    rates = [None for _ in order]
+    for r, o in zip(rates_sorted, order):
+        rates[o] = r
+    return rates
+
+
+def MAC_rates_ordered(MAC_Covs, Hs):
     Nrx = Hs[0].shape[0]
     Z = np.eye(Nrx)
     rates = []
@@ -161,6 +193,30 @@ def MAC_rates(MAC_Covs, Hs):
     return rates, Zs
 
 
+def logdet(X):
+    return np.linalg.slogdet(X)[1]
+
+
+def BC_rates(BC_Covs, Hs, BC_encoding_order):
+    rates = [None for _ in BC_encoding_order]
+    Ntx = Hs[0].shape[1]
+    Sum_INT = np.zeros([Ntx, Ntx])
+    for user in reversed(BC_encoding_order):
+        BC_Cov = BC_Covs[user]
+        H = Hs[user]
+        Nrx = H.shape[0]
+        IPN = np.eye(Nrx) + H @ Sum_INT @ H.conj().T
+        rate = (
+            logdet(
+                np.eye(Nrx) + H @ BC_Cov @ H.conj().T @ np.linalg.inv(IPN)
+            )
+        ) / np.log(2)
+        rates[user] = rate
+        Sum_INT = Sum_INT + BC_Cov
+    assert all(rates)
+    return rates
+
+
 def project_eigenvalues_to_given_sum_cvx(e, P):
     # setup the objective and constraints and solve the problem
     x = cp.Variable(len(e))
@@ -168,47 +224,76 @@ def project_eigenvalues_to_given_sum_cvx(e, P):
     constraints = [x >= 0, cp.sum(x) == P]
     prob = cp.Problem(obj, constraints)
     prob.solve()
-    return np.array(x.value).squeeze()
+    return x.value
 
 
-def project_covariance_cvx(X, P):
-    Cov = cp.Variable([X.shape[0], X.shape[0]], complex=True)
-    obj = cp.Minimize(cp.sum_squares(Cov - X))
-    power = cp.real(cp.trace(Cov)) <= P
-    positivity = Cov >> 0
-    constraints = [power, positivity]
+def project_covariance_cvx(Xs, P):
+    Covs = [cp.Variable([X.shape[0], X.shape[0]], complex=True) for X in Xs]
+    obj = cp.Minimize(
+        cp.sum([cp.real(cp.sum_squares(Cov - X)) for Cov, X in zip(Covs, Xs)])
+    )
+    power = cp.sum([cp.real(cp.trace(Cov)) for Cov in Covs]) <= P
+    positivity = [(Cov >> 0) for Cov in Covs]
+    constraints = [power] + positivity
     prob = cp.Problem(obj, constraints)
     prob.solve(solver=cp.SCS, eps=1e-9)
-    return Cov.value
+    return [Cov.value for Cov in Covs]
+
+
+def project_covariances(Covs, P):
+    eigs = []
+    VVs = []
+    for uMAC_Cov in Covs:
+        eig, VV = np.linalg.eigh(uMAC_Cov)
+        eigs.append(eig)
+        VVs.append(VV)
+    # project to constraint set: operate on eigenvalues
+    # flatten a list of lists https://stackoverflow.com/a/952952
+    eigenvalues = [item for sublist in eigs for item in sublist]
+    if sum(eigenvalues) <= P:
+        return Covs
+    # TODO, do this without CVX
+    projected = project_eigenvalues_to_given_sum_cvx(eigenvalues, P)
+    assert sum(projected) <= P * 1.01
+    # update
+    Covs = []
+    sum_eigs = 0
+    offset = 0
+    for eig, VV in zip(eigs, VVs):
+        new_eigs = projected[offset : offset + len(eig)]
+        offset += len(eig)
+        sum_eigs += sum(new_eigs)
+        Covs.append(VV @ np.diag(new_eigs) @ VV.conj().T)
+    assert sum_eigs <= P * 1.01
+    return Covs
 
 
 def MAC(Hs, P, weights, rate_threshold=1e-6, max_iterations=30):
     # start with no rate change
     rate_change = 0
-    # initialize outer and inner iterations
-    outer_iterations = 0
-    inner_iterations = 0
-    Hs, alphas = sort_channels(Hs, weights)
-    sum_transmit_antennas = sum(H.shape[1] for H in Hs)
-    Nrx = Hs[0].shape[0]
-    MAC_Covs = [P / sum_transmit_antennas * np.eye(H.shape[1]) for H in Hs]
+
+    Hs_sorted, alphas, order = sort_channels(Hs, weights)
+    import ipdb; ipdb.set_trace()
+    sum_transmit_antennas = sum(H.shape[1] for H in Hs_sorted)
+    MAC_Covs_sorted = [
+        P / sum_transmit_antennas * np.eye(H.shape[1]) for H in Hs_sorted
+    ]
 
     # initialize step_size parameter
     d = 1
     d0 = 1
     # compute Z matrix
     for outer_i in range(max_iterations):
-        rates, Zs = MAC_rates(MAC_Covs, Hs)
+        rates, Zs = MAC_rates_ordered(MAC_Covs_sorted, Hs_sorted)
         last_weighted_rate = sum(
             [w * r for w, r in zip(sorted(weights, reverse=True), rates)]
         )
         # precompute inverses
         Z_invs = [np.linalg.inv(Z) for Z in Zs]
-        I = np.eye(Nrx)
 
         # compute the gradients
         dMAC_Covs = []
-        for k, (MAC_Cov, H) in enumerate(zip(MAC_Covs, Hs)):
+        for k, (MAC_Cov, H) in enumerate(zip(MAC_Covs_sorted, Hs_sorted)):
             dMAC_Cov = np.zeros([MAC_Cov.shape[0], MAC_Cov.shape[0]])
             for Z_inv, alpha in zip(Z_invs[k:], alphas[k:]):
                 dMAC_Cov = dMAC_Cov + 1 / np.log(2) * alpha * H.conj().T @ Z_inv @ H
@@ -217,33 +302,15 @@ def MAC(Hs, P, weights, rate_threshold=1e-6, max_iterations=30):
         dMAC_Covs = [P / dMAC_Covs_trace * dMAC_Cov for dMAC_Cov in dMAC_Covs]
         for inner_i in range(max_iterations):
             # now update the covariances
-            updated_MAC_Covs = [MAC_Cov + d0 / d * dMAC_Cov for MAC_Cov, dMAC_Cov in zip(MAC_Covs, dMAC_Covs)]
-            eigs = []
-            VVs = []
-            for uMAC_Cov in updated_MAC_Covs:
-                eig, VV = np.linalg.eigh(uMAC_Cov)
-                eigs.append(eig)
-                VVs.append(VV)
-            # project to constraint set: operate on eigenvalues
-            # flatten a list of lists https://stackoverflow.com/a/952952
-            eigenvalues = [item for sublist in eigs for item in sublist]
-            projected = project_eigenvalues_to_given_sum_cvx(eigenvalues, P)
-            assert sum(projected) <= P * 1.01
-            # update
-            updated_MAC_Covs = []
-            sum_eigs = 0
-            offset = 0
-            for eig, VV in zip(eigs, VVs):
-                new_eigs = projected[offset : offset + len(eig)]
-                offset += len(eig)
-                sum_eigs += sum(new_eigs)
-                updated_MAC_Covs.append(VV @ np.diag(new_eigs) @ VV.conj().T)
-            assert sum_eigs <= P * 1.01
-            rates = MAC_rates(updated_MAC_Covs, Hs)[0]
+            updated_MAC_Covs = [
+                MAC_Cov + d0 / d * dMAC_Cov
+                for MAC_Cov, dMAC_Cov in zip(MAC_Covs_sorted, dMAC_Covs)
+            ]
+            updated_MAC_Covs = project_covariances(updated_MAC_Covs, P)
+            rates = MAC_rates_ordered(updated_MAC_Covs, Hs_sorted)[0]
             this_weighted_rate = sum(
                 [w * r for w, r in zip(sorted(weights, reverse=True), rates)]
             )
-            this_weighted_rate_cvs = sum(MAC_rates(updated_MAC_Covs, Hs)[0])
             LOGGER.info(
                 f"Competed inner iteration {inner_i} - current obj {this_weighted_rate} - last obj {last_weighted_rate}"
             )
@@ -251,13 +318,16 @@ def MAC(Hs, P, weights, rate_threshold=1e-6, max_iterations=30):
                 d += 1
             else:
                 rate_change = this_weighted_rate - last_weighted_rate
-                last_weighted_rate = this_weighted_rate
-                MAC_Covs = updated_MAC_Covs
+                MAC_Covs_sorted = updated_MAC_Covs
                 break
         LOGGER.info(
             f"Competed outer iteration {outer_i} - current obj {this_weighted_rate} - rate change {rate_change}"
         )
         if rate_change / this_weighted_rate < rate_threshold:
             break
-    rates = MAC_rates(MAC_Covs, Hs)[0]
-    return rates, MAC_Covs
+
+    MAC_Covs = [None for _ in order]
+    for Cov, o in zip(MAC_Covs_sorted, reversed(order)):
+        MAC_Covs[o] = Cov
+    rates = MAC_rates(MAC_Covs, Hs, list(reversed(order)))
+    return rates, MAC_Covs, list(reversed(order))
