@@ -8,7 +8,6 @@ import pytest
 LOGGER = logging.getLogger(__name__)
 
 
-
 def MACtoBCtransformation(Hs, MAC_Cov, MAC_decoding_order):
     BS_antennas = Hs[0].shape[1]
     BC_Covs = []
@@ -130,20 +129,19 @@ def argsort(weights, reverse=False):
 
 
 def sort_channels(Hs, weights):
-
-    order = argsort(weights, reverse=True)
+    order = argsort(weights)
     Hs = [Hs[k] for k in order]
-    alphas = (-np.diff(sorted(weights, reverse=True))).tolist()
-    alphas.append(weights[-1])
-    return Hs, alphas, list(reversed(order))
+    alphas = np.diff([weights[o] for o in order]).tolist()
+    alphas.append(weights[order[0]])
+    return Hs, alphas, order
 
 
 def MAC_cvx(Hs, P, weights):
     MAC_Covs = []
     Xs = []
-    Hs, alphas, order = sort_channels(Hs, weights)
+    Hs_sorted, alphas, order = sort_channels(Hs, weights)
 
-    for H in Hs:
+    for H in Hs_sorted:
         Nrx, Ntx = H.shape
         MAC_Covs.append(cp.Variable([Ntx, Ntx], complex=True))
         Xs.append(cp.Variable([Nrx, Nrx], complex=True))
@@ -151,7 +149,7 @@ def MAC_cvx(Hs, P, weights):
     cost = cp.sum([alpha * cp.log_det(X) for X, alpha in zip(Xs, alphas)])
     mat = []
     matrix_equal = I
-    for X, MAC_Cov, H in zip(Xs, MAC_Covs, Hs):
+    for X, MAC_Cov, H in zip(Xs, MAC_Covs, Hs_sorted):
         matrix_equal += H @ MAC_Cov @ H.conj().T
         mat.append(X << matrix_equal)
     power = cp.sum([cp.real(cp.trace(MAC_Cov)) for MAC_Cov in MAC_Covs]) <= P
@@ -207,9 +205,7 @@ def BC_rates(BC_Covs, Hs, BC_encoding_order):
         Nrx = H.shape[0]
         IPN = np.eye(Nrx) + H @ Sum_INT @ H.conj().T
         rate = (
-            logdet(
-                np.eye(Nrx) + H @ BC_Cov @ H.conj().T @ np.linalg.inv(IPN)
-            )
+            logdet(np.eye(Nrx) + H @ BC_Cov @ H.conj().T @ np.linalg.inv(IPN))
         ) / np.log(2)
         rates[user] = rate
         Sum_INT = Sum_INT + BC_Cov
@@ -273,7 +269,6 @@ def MAC(Hs, P, weights, rate_threshold=1e-6, max_iterations=30):
     rate_change = 0
 
     Hs_sorted, alphas, order = sort_channels(Hs, weights)
-    import ipdb; ipdb.set_trace()
     sum_transmit_antennas = sum(H.shape[1] for H in Hs_sorted)
     MAC_Covs_sorted = [
         P / sum_transmit_antennas * np.eye(H.shape[1]) for H in Hs_sorted
@@ -327,7 +322,7 @@ def MAC(Hs, P, weights, rate_threshold=1e-6, max_iterations=30):
             break
 
     MAC_Covs = [None for _ in order]
-    for Cov, o in zip(MAC_Covs_sorted, reversed(order)):
+    for Cov, o in zip(MAC_Covs_sorted, order):
         MAC_Covs[o] = Cov
-    rates = MAC_rates(MAC_Covs, Hs, list(reversed(order)))
-    return rates, MAC_Covs, list(reversed(order))
+    rates = MAC_rates(MAC_Covs, Hs, order)
+    return rates, MAC_Covs, order

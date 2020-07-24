@@ -1,29 +1,30 @@
+import itertools
 import logging
+import random
 
 import numpy as np
 import pytest
-import random
-import itertools
 
 from .mimo import (
+    MAC,
+    BC_rates,
     MAC_cvx,
+    MAC_rates,
+    MAC_rates_ordered,
     MACtoBCtransformation,
     inv_sqrtm,
-    MAC,
-    MAC_rates_ordered,
-    MAC_rates,
+    logdet,
     project_covariance_cvx,
     project_covariances,
-    BC_rates,
     project_eigenvalues_to_given_sum_cvx,
     ptp_capacity,
     ptp_capacity_cvx,
     water_filling_cvx,
     water_filling_iter,
-    logdet,
 )
 
 LOGGER = logging.getLogger(__name__)
+
 
 @pytest.mark.parametrize("Ms_antennas_list, Bs_antennas", [([1, 2, 3], 2)])
 def test_MAC_rate_formulation(Ms_antennas_list, Bs_antennas):
@@ -34,48 +35,51 @@ def test_MAC_rate_formulation(Ms_antennas_list, Bs_antennas):
             np.random.random([Ms_antennas, Bs_antennas])
             + np.random.random([Ms_antennas, Bs_antennas]) * 1j
         )
-        Co = np.random.random([Ms_antennas, Ms_antennas]) + np.random.random([Ms_antennas, Ms_antennas]) * 1j
+        Co = (
+            np.random.random([Ms_antennas, Ms_antennas])
+            + np.random.random([Ms_antennas, Ms_antennas]) * 1j
+        )
         Covs.append(Co @ Co.conj().T)
     I = np.eye(Bs_antennas)
-    #r1 = logdet(I + Hs[2].conj().T @ Covs[2] @ Hs[2])
-    No = np.random.random([Ms_antennas, Ms_antennas]) + np.random.random([Ms_antennas, Ms_antennas]) * 1j
-    Noise = 10*I
+    # r1 = logdet(I + Hs[2].conj().T @ Covs[2] @ Hs[2])
+    No = (
+        np.random.random([Ms_antennas, Ms_antennas])
+        + np.random.random([Ms_antennas, Ms_antennas]) * 1j
+    )
+    Noise = 10 * I
     # decoding order: user 2, user 1, user 0 is decoded last
-  
+
     HCH0 = Hs[0].conj().T @ Covs[0] @ Hs[0]
     HCH1 = Hs[1].conj().T @ Covs[1] @ Hs[1]
     HCH2 = Hs[2].conj().T @ Covs[2] @ Hs[2]
 
-    IPN0 = Noise  
+    IPN0 = Noise
     IPN1 = Noise + HCH0
     IPN1 = Noise + HCH0 + HCH1
 
-    r0_c = logdet(I + np.linalg.inv(Noise) @ HCH0) 
+    r0_c = logdet(I + np.linalg.inv(Noise) @ HCH0)
     r0_d = logdet(Noise + HCH0) - logdet(Noise)
-    assert r0_d == pytest.approx(r0_c)
-    r1_c = logdet(I + np.linalg.inv(Noise + HCH0) @ HCH1) 
+    assert r0_d == pytest.approx(r0_c, 1e-3)
+    r1_c = logdet(I + np.linalg.inv(Noise + HCH0) @ HCH1)
     r1_d = logdet(Noise + HCH0 + HCH1) - logdet(Noise + HCH0)
-    assert r1_d == pytest.approx(r1_c)
-    r2_c = logdet(I + np.linalg.inv(Noise + HCH0 + HCH1) @ HCH2) 
+    assert r1_d == pytest.approx(r1_c, 1e-3)
+    r2_c = logdet(I + np.linalg.inv(Noise + HCH0 + HCH1) @ HCH2)
     r2_d = logdet(Noise + HCH0 + HCH1 + HCH2) - logdet(Noise + HCH0 + HCH1)
-    assert r2_d == pytest.approx(r2_c)
+    assert r2_d == pytest.approx(r2_c, 1e-3)
 
     w = [2, 1.5, 0.5]
     wsr_d = w[0] * r0_c + w[1] * r1_c + w[2] * r2_c
-    wsr_c  = w[0] * logdet(Noise + HCH0) - w[0] * logdet(Noise)
+    wsr_c = w[0] * logdet(Noise + HCH0) - w[0] * logdet(Noise)
     wsr_c += w[1] * logdet(Noise + HCH0 + HCH1) - w[1] * logdet(Noise + HCH0)
-    wsr_c += w[2] * logdet(Noise + HCH0 + HCH1 + HCH2) - w[2] * logdet(Noise + HCH0 + HCH1)
-    wsr_e  = - w[0] * logdet(Noise)
-    wsr_e += (w[0] - w[1]) * logdet(Noise + HCH0) 
-    wsr_e += (w[1] - w[2]) * logdet(Noise + HCH0 + HCH1) 
-    wsr_e += w[2] * logdet(Noise + HCH0 + HCH1 + HCH2) 
-    assert wsr_d == pytest.approx(wsr_c)
-    assert wsr_e == pytest.approx(wsr_c)
-
-
-
-
-
+    wsr_c += w[2] * logdet(Noise + HCH0 + HCH1 + HCH2) - w[2] * logdet(
+        Noise + HCH0 + HCH1
+    )
+    wsr_e = -w[0] * logdet(Noise)
+    wsr_e += (w[0] - w[1]) * logdet(Noise + HCH0)
+    wsr_e += (w[1] - w[2]) * logdet(Noise + HCH0 + HCH1)
+    wsr_e += w[2] * logdet(Noise + HCH0 + HCH1 + HCH2)
+    assert wsr_d == pytest.approx(wsr_c, 1e-3)
+    assert wsr_e == pytest.approx(wsr_c, 1e-3)
 
 
 def test_BC_Rates():
@@ -88,13 +92,13 @@ def test_BC_Rates():
 
 
 def test_MAC_Rates():
-    H1 = H2 = np.array([[1, 0, 0]]) 
+    H1 = H2 = np.array([[1, 0, 0]])
     Cov1 = Cov2 = np.array([[1]])
     rates_01 = MAC_rates([Cov1, Cov2], [H1.T, H2.T], [0, 1])
     assert rates_01[1] >= rates_01[0]
     BC_Cov_trans_01 = MACtoBCtransformation([H1, H2], [Cov1, Cov2], [0, 1])
     BC_rates_01 = BC_rates(BC_Cov_trans_01, [H1, H2], [1, 0])
-    assert rates_01 == pytest.approx(BC_rates_01)
+    assert rates_01 == pytest.approx(BC_rates_01, 1e-3)
     rates_10 = MAC_rates([Cov1, Cov2], [H1.T, H2.T], [1, 0])
     assert rates_10[0] >= rates_10[1]
     # assumes channels and covariances in inverse order of decoding
@@ -105,13 +109,13 @@ def test_MAC_Rates():
     # first user is decoded last -> higher rate
     rates_o2, _ = MAC_rates_ordered([Cov2, Cov1], [H2.T, H1.T])
     assert rates_o2[0] >= rates_o2[1]
-    
+
 
 def test_vishwanath_example1():
-    ''' we reproduce the numerical example in "Duality, Achievable Rates, and Sum-Rate Capacity of
+    """ we reproduce the numerical example in "Duality, Achievable Rates, and Sum-Rate Capacity of
     Gaussian MIMO Broadcast Channels" by Vishwanath, Jindal, Goldsmith 
     http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.76.5703&rep=rep1&type=pdf
-    '''
+    """
     # example 1
     H1 = np.array([[1.0, 0.8], [0.5, 2.0]])
     H2 = np.array([[0.2, 1.0], [2.0, 0.5]])
@@ -124,7 +128,7 @@ def test_vishwanath_example1():
 
     MAC_rates_order_10, _ = MAC_rates_ordered([P2, P1], [H2.T, H1.T])
     MAC_rates_order_01, _ = MAC_rates_ordered([P1, P2], [H1.T, H2.T])
-    assert sum(MAC_rates_order_10) == pytest.approx(sum(MAC_rates_order_01))
+    assert sum(MAC_rates_order_10) == pytest.approx(sum(MAC_rates_order_01), 1e-3)
     assert sum(MAC_rates) == pytest.approx(sum(MAC_rates_order_01), 1e-3)
 
     S1_2 = np.array([[0.0001, -0.0069], [-0.0069, 0.4841]])
@@ -163,7 +167,7 @@ def test_vishwanath_example2():
     )[1] / np.log(2)
     MAC_sum_rate_paper = 0.8109 / np.log(2)
     assert MAC_sum_rate == pytest.approx(MAC_sum_rate_paper, 1e-3)
-    MAC_rates, MAC_Covs, order = MAC([H1.T, H2.T, H3.T], P, [1.0001, 1, 0.99999])
+    MAC_rates, MAC_Covs, order = MAC([H1.T, H2.T, H3.T], P, [0.9999, 1, 1.0001])
     assert sum(MAC_rates) == pytest.approx(MAC_sum_rate, 1e-3)
     O = np.array([[1 / 3]])
     BC_Cov_trans = MACtoBCtransformation([H1, H2, H3], [O, O, O], [0, 1, 2])
@@ -211,10 +215,12 @@ def test_MACtoBCtransformation_ptp(Ms_antennas, Bs_antennas):
     )
 
     rates_BC_calc = BC_rates(BC_Cov_trans, [H], [0])
-    assert rate_BC == pytest.approx(rates_BC_calc[0])
+    assert rate_BC == pytest.approx(rates_BC_calc[0], 1e-3)
 
+
+@pytest.mark.parametrize("MAC_fun", [MAC, MAC_cvx])
 @pytest.mark.parametrize("Ms_antennas_list, Bs_antennas", [([1, 2, 3], 2)])
-def test_MACtoBCtransformation(Ms_antennas_list, Bs_antennas):
+def test_MACtoBCtransformation(MAC_fun, Ms_antennas_list, Bs_antennas):
     Hs = []
     for Ms_antennas in Ms_antennas_list:
         Hs.append(
@@ -222,25 +228,29 @@ def test_MACtoBCtransformation(Ms_antennas_list, Bs_antennas):
             + np.random.random([Ms_antennas, Bs_antennas]) * 1j
         )
     MAC_Hs = [H.conj().T for H in Hs]
-    w = list(range(1,len(Ms_antennas_list)+1))
-    # broadcast, user with larges weight is encoded first https://arxiv.org/pdf/0901.2401.pdf 
+    w = list(range(1, len(Ms_antennas_list) + 1))
+    w = [w * 3 for w in w]
+    # broadcast, user with larges weight is encoded first https://arxiv.org/pdf/0901.2401.pdf
     # MAC decoding order is inverse that is, user with largest weight es decoded last
-    for weights in itertools.permutations(w):  
+    for weights in itertools.permutations(w):
         MAC_decoding_order = np.argsort(weights)
         assert weights[MAC_decoding_order[-1]] >= weights[MAC_decoding_order[0]]
-        mac_rates, MAC_Covs, order = MAC(MAC_Hs, 100, weights)
+        mac_rates, MAC_Covs, order = MAC_fun(MAC_Hs, 100, weights)
         assert order == pytest.approx(MAC_decoding_order)
         # user with heighest weight sees no interference:
         logdet = np.linalg.slogdet
         dec_last = MAC_decoding_order[-1]
-        r_h = logdet(np.eye(Bs_antennas) + MAC_Hs[dec_last] @ MAC_Covs[dec_last] @ MAC_Hs[dec_last].conj().T)
+        r_h = logdet(
+            np.eye(Bs_antennas)
+            + MAC_Hs[dec_last] @ MAC_Covs[dec_last] @ MAC_Hs[dec_last].conj().T
+        )
         # sort H and MAC_Covs
-        assert r_h[1] / np.log(2) == pytest.approx(mac_rates[dec_last]) 
+        assert r_h[1] / np.log(2) == pytest.approx(mac_rates[dec_last], 1e-3)
         mac_rates_calc = MAC_rates(MAC_Covs, MAC_Hs, MAC_decoding_order)
         assert mac_rates == pytest.approx(mac_rates_calc, 1e-3)
         # broadcast, highest weight is encoded first, lowest weight sees no interference
         enc_last = MAC_decoding_order[0]
-         
+
 
 #        BC_Cov_trans = MACtoBCtransformation(Hs, MAC_Covs, MAC_decoding_order)
 #        rates_BC_calc = BC_rates(BC_Cov_trans, Hs, list(reversed(MAC_decoding_order)))
@@ -253,7 +263,7 @@ def test_MACtoBCtransformation(Ms_antennas_list, Bs_antennas):
 def test_project_eigenvalues_to_given_sum_cvx(P):
     aa = np.array([1, 2, 3, 4])
     projected = project_eigenvalues_to_given_sum_cvx(aa, P)
-    assert sum(projected) == pytest.approx(P)
+    assert sum(projected) == pytest.approx(P, 1e-3)
 
 
 @pytest.mark.parametrize(
@@ -268,8 +278,8 @@ def test_project_eigenvalues_to_given_sum_cvx(P):
 )
 def test_p2p(H, P, r_exp, Cov_exp):
     rate, Cov = ptp_capacity(H, P)
-    assert rate == pytest.approx(r_exp)
-    assert np.trace(Cov) == pytest.approx(P)
+    assert rate == pytest.approx(r_exp, 1e-3)
+    assert np.trace(Cov) == pytest.approx(P, 1e-3)
     np.testing.assert_almost_equal(Cov, Cov_exp)
 
 
@@ -301,16 +311,17 @@ def test_MAC(MAC_fun, Ntxs, Nrx):
         Hs.append(np.random.random([Nrx, Ntx]) + np.random.random([Nrx, Ntx]) * 1j)
 
     rates_cvx, MAC_Covs, order = MAC_fun(Hs, 100, [1 for _ in Ntxs])
-    logdet = np.linalg.slogdet
-    Z = np.eye(Nrx)
     rates = []
-    for MAC_Cov, Ntx, H, r_cvx in zip(MAC_Covs, Ntxs, Hs, rates_cvx):
+    for user, (MAC_Cov, Ntx, H, r_cvx) in enumerate(zip(MAC_Covs, Ntxs, Hs, rates_cvx)):
         Ntx1, Ntx2 = MAC_Cov.shape
         assert Ntx1 == Ntx2
         assert Ntx1 == Ntx
-        Znew = Z + H @ MAC_Cov @ H.conj().T
-        r = (logdet(Znew)[1].real - logdet(Z)[1].real) / np.log(2)
-        Z = Znew
+        ind = order.index(user)
+        IPN = np.eye(Nrx)
+        for k in order[ind + 1 :]:
+            IPN = IPN + Hs[k] @ MAC_Covs[k] @ Hs[k].conj().T
+        HCH = H @ MAC_Cov @ H.conj().T
+        r = (logdet(IPN + HCH) - logdet(IPN)) / np.log(2)
         assert r == pytest.approx(r_cvx, 1e-3)
         rates.append(r)
     assert sum([np.trace(MAC_Cov) for MAC_Cov in MAC_Covs]) == pytest.approx(100, 1e-3)
@@ -353,7 +364,7 @@ def test_waterfilling(power):
     # the water level is 1/gain + power for all active channels
     water_level = [1 / g + p for g, p in zip(gains, p2) if p > 0]
     for w in water_level:
-        assert w == pytest.approx(water_level[0])
+        assert w == pytest.approx(water_level[0], 1e-3)
 
     for a, b in zip(p1, p2):
 
@@ -373,4 +384,4 @@ def test_project_covariance():
         assert sum([np.trace(Cov).real for Cov in pCovs_cvx]) - 1e-3 <= P
         d = sum([np.sum((Cov - pCov) ** 2) for Cov, pCov in zip(Covs, pCovs)])
         d_cvx = sum([np.sum((Cov - pCov) ** 2) for Cov, pCov in zip(Covs, pCovs_cvx)])
-        assert d == pytest.approx(d_cvx)
+        assert d == pytest.approx(d_cvx, 1e-3)
