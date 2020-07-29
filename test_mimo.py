@@ -34,6 +34,9 @@ det = np.linalg.det
 log = np.log
 eye = np.eye
 
+@pytest.fixture(scope="function", autouse=True)
+def seed():
+    np.random.seed(42)
 
 # worst case noise, like white
 @pytest.mark.parametrize("Ms_antennas", [2, 3])
