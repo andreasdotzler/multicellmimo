@@ -11,7 +11,15 @@ LOGGER = logging.getLogger(__name__)
 inv = np.linalg.inv
 det = np.linalg.det
 log = np.log
+log2 = np.log2
 eye = np.eye
+
+def logdet(X):
+    return log(np.real(det(X)))
+
+
+def log2det(X):
+    return log2(np.real(det(X)))
 
 
 def MACtoBCtransformation(Hs, MAC_Cov, MAC_decoding_order):
@@ -250,14 +258,12 @@ def MAC_rates_ordered(MAC_Covs, Hs):
     for MAC_Cov, H in zip(MAC_Covs, Hs):
         Znew = Z + H @ MAC_Cov @ H.conj().T
         Zs.append(Znew)
-        rate = (np.linalg.slogdet(Znew)[1] - np.linalg.slogdet(Z)[1]) / np.log(2)
+        rate = log2det(Znew) - log2det(Z)
         rates.append(rate)
         Z = Znew
     return rates, Zs
 
 
-def logdet(X):
-    return np.linalg.slogdet(X)[1]
 
 
 def BC_rates(BC_Covs, Hs, BC_encoding_order):
@@ -270,8 +276,8 @@ def BC_rates(BC_Covs, Hs, BC_encoding_order):
         Nrx = H.shape[0]
         IPN = np.eye(Nrx) + H @ Sum_INT @ H.conj().T
         rate = (
-            logdet(np.eye(Nrx) + H @ BC_Cov @ H.conj().T @ np.linalg.inv(IPN))
-        ) / np.log(2)
+            log2det(np.eye(Nrx) + H @ BC_Cov @ H.conj().T @ np.linalg.inv(IPN))
+        ) 
         rates[user] = rate
         Sum_INT = Sum_INT + BC_Cov
     assert all(rates)
