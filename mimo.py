@@ -14,6 +14,7 @@ log = np.log
 log2 = np.log2
 eye = np.eye
 
+
 def logdet(X):
     return log(np.real(det(X)))
 
@@ -72,65 +73,6 @@ def inv_sqrtm(A):
 def sqrtm(A):
     ei_d, V_d = np.linalg.eigh(A)
     return V_d @ np.diag(ei_d ** 0.5) @ V_d.conj().T
-
-
-def ptp_capacity_mimimax(H, R, C, P, alpha=1):
-    Nrx, Ntx = H.shape
-    Q = cp.Variable([Ntx, Ntx])
-    Z = cp.Variable([Ntx, Ntx])
-    S = alpha * R
-    cost = cp.log_det(np.eye(Nrx) + np.linalg.inv(S) @ H @ Q @ H.conj().T)
-    shape = Q << alpha * C + Z
-    trZ = cp.trace(Z) == 0
-    positivity = Q >> 0
-    constraints = [shape, trZ, positivity]
-    prob = cp.Problem(cp.Maximize(cost), constraints)
-    prob.solve(solver=cp.SCS, eps=1e-9)
-    return prob.value / np.log(2), Q.value, (c.dual_value for c in constraints)
-
-
-def ptp_worst_case_noise(H, P, sigma=1):
-    Nrx, Ntx = H.shape
-    Z = np.eye(Ntx)
-    rate_o = None
-    for i in range(100):
-        rate_i, (W, la) = ptp_capacity_cvx_dual(H, P / sigma, Z)
-        # rate_o, Z = ptp_noise_cvx_dual(H, P, W, la)
-        Z = inv(W + la * P / sigma * np.eye(Ntx))
-        assert np.all(np.linalg.eigvals(Z) > 0)
-        LOGGER.debug(f"rate inner: {rate_i} : rate outer {rate_o}")
-    return rate_i, (Z, W)
-
-
-def ptp_capacity_cvx_dual(H, Ps, Z):
-    Nrx, Ntx = H.shape
-    W = cp.Variable([Ntx, Ntx], symmetric=True)
-    la = cp.Variable(1)
-    cost = -cp.log_det(W) - log(det(Z)) + cp.trace(Z @ W) + Ps * la * np.trace(Z) - Ntx
-    positivity_W = W >> 0
-    postitvity_la = la >= 0
-    cons = cp.multiply(la, np.eye(Nrx)) >> H @ W @ H.T
-    constraints = [cons, positivity_W, postitvity_la]
-    prob = cp.Problem(cp.Minimize(cost), constraints)
-    prob.solve(solver=cp.SCS, eps=1e-9)
-    assert "optimal" in prob.status
-    assert np.all(np.linalg.eigvals(W.value) > 0)
-    return prob.value / np.log(2), (W.value, la.value)
-
-
-def ptp_noise_cvx_dual(H, P, W, la):
-    Nrx, Ntx = H.shape
-    Z = cp.Variable([Ntx, Ntx])
-    cost = (
-        log(det(W)) - cp.log_det(Z) + cp.trace(Z @ W) + P / Ntx * la * cp.trace(Z) - Ntx
-    )
-    cost = -cp.log_det(Z) + cp.trace(Z @ W) + P / Ntx * la * cp.trace(Z)
-    positivity_Z = Z >> 0
-    constraints = [positivity_Z]
-    prob = cp.Problem(cp.Minimize(cost), constraints)
-    prob.solve(solver=cp.SCS, eps=1e-9)
-    assert prob.status == "optimal"
-    return prob.value / np.log(2), Z.value
 
 
 def ptp_capacity_cvx(H, P):
@@ -264,8 +206,6 @@ def MAC_rates_ordered(MAC_Covs, Hs):
     return rates, Zs
 
 
-
-
 def BC_rates(BC_Covs, Hs, BC_encoding_order):
     rates = [None for _ in BC_encoding_order]
     Ntx = Hs[0].shape[1]
@@ -275,9 +215,7 @@ def BC_rates(BC_Covs, Hs, BC_encoding_order):
         H = Hs[user]
         Nrx = H.shape[0]
         IPN = np.eye(Nrx) + H @ Sum_INT @ H.conj().T
-        rate = (
-            log2det(np.eye(Nrx) + H @ BC_Cov @ H.conj().T @ np.linalg.inv(IPN))
-        ) 
+        rate = log2det(np.eye(Nrx) + H @ BC_Cov @ H.conj().T @ np.linalg.inv(IPN))
         rates[user] = rate
         Sum_INT = Sum_INT + BC_Cov
     assert all(rates)
