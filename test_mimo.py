@@ -454,15 +454,19 @@ def test_MAC_ptp(Ntxs, Nrx):
 
 
 @pytest.mark.parametrize("Ntxs, Nrx", [([1, 2, 3], 2)])
-def test_MAC_vs_MACcvs(Ntxs, Nrx):
+def test_MAC_vs_MACcvx(Ntxs, Nrx):
     Hs = [
         np.random.random([Nrx, Ntx]) + np.random.random([Nrx, Ntx]) * 1j for Ntx in Ntxs
     ]
-    weights = [1, 1]
-    rates_MAC_cvx, MAC_Covs_cvx, order = MAC_cvx(Hs, 100, weights)
-    rates_MAC, MAC_Covs, order = MAC(Hs, 100, weights)
-    assert sum([np.trace(MAC_cov) for MAC_cov in MAC_Covs]) == pytest.approx(100, 1e-3)
-    assert sum(rates_MAC) == pytest.approx(sum(rates_MAC_cvx), 1e-3)
+    w = list(range(1, len(Ntxs) + 1))
+    w = [w * 3 for w in w]
+    # broadcast, user with larges weight is encoded first https://arxiv.org/pdf/0901.2401.pdf
+    # MAC decoding order is inverse that is, user with largest weight es decoded last
+    for weights in itertools.permutations(w):
+        rates_MAC_cvx, MAC_Covs_cvx, order = MAC_cvx(Hs, 100, weights)
+        rates_MAC, MAC_Covs, order = MAC(Hs, 100, weights)
+        assert sum([np.trace(MAC_cov) for MAC_cov in MAC_Covs]) == pytest.approx(100, 1e-3)
+        assert rates_MAC == pytest.approx(rates_MAC_cvx, abs=0.1)
 
 
 @pytest.mark.parametrize("power", [3, 8, 9, 12, 100])
