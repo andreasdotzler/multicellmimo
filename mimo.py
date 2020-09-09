@@ -77,7 +77,7 @@ def sqrtm(A):
 
 def ptp_capacity_cvx(H, P):
     Nrx, Ntx = H.shape
-    Cov = cp.Variable([Ntx, Ntx], complex=True)
+    Cov = cp.Variable([Ntx, Ntx], hermitian=True)
     I = np.eye(Ntx)
     cost = cp.log_det(I + Cov @ H.conj().T @ H)
     power = cp.real(cp.trace(Cov)) <= P
@@ -158,8 +158,8 @@ def MAC_cvx(Hs, P, weights):
 
     for H in Hs_sorted:
         Nrx, Ntx = H.shape
-        MAC_Covs.append(cp.Variable([Ntx, Ntx], complex=True))
-        Xs.append(cp.Variable([Nrx, Nrx], complex=True))
+        MAC_Covs.append(cp.Variable([Ntx, Ntx], hermitian=True))
+        Xs.append(cp.Variable([Nrx, Nrx], hermitian=True))
     I = np.eye(Nrx)
     cost = cp.sum([alpha * cp.log_det(X) for X, alpha in zip(Xs, alphas)])
     mat = []
@@ -228,15 +228,13 @@ def project_eigenvalues_to_given_sum_cvx(e, P):
     obj = cp.Minimize(cp.sum_squares(e - x))
     constraints = [x >= 0, cp.sum(x) == P]
     prob = cp.Problem(obj, constraints)
-    prob.solve()
+    prob.solve(solver=cp.SCS, eps=1e-15)
     return x.value
 
 
 def project_covariance_cvx(Xs, P):
-    Covs = [cp.Variable([X.shape[0], X.shape[0]], complex=True) for X in Xs]
-    obj = cp.Minimize(
-        cp.sum([cp.real(cp.sum_squares(Cov - X)) for Cov, X in zip(Covs, Xs)])
-    )
+    Covs = [cp.Variable([X.shape[0], X.shape[0]], hermitian=True) for X in Xs]
+    obj = cp.Minimize(cp.sum([cp.sum_squares(Cov - X) for Cov, X in zip(Covs, Xs)]))
     power = cp.sum([cp.real(cp.trace(Cov)) for Cov in Covs]) <= P
     positivity = [(Cov >> 0) for Cov in Covs]
     constraints = [power] + positivity

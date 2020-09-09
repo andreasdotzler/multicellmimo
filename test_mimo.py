@@ -236,7 +236,7 @@ def test_MACtoBCtransformation(MAC_fun, Ms_antennas_list, Bs_antennas):
     for Ms_antennas in Ms_antennas_list:
         Hs.append(
             np.random.random([Ms_antennas, Bs_antennas])
-            + np.random.random([Ms_antennas, Bs_antennas]) * 1j
+            #            + np.random.random([Ms_antennas, Bs_antennas]) * 1j
         )
     MAC_Hs = [H.conj().T for H in Hs]
     w = list(range(1, len(Ms_antennas_list) + 1))
