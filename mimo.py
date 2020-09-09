@@ -25,7 +25,7 @@ def log2det(X):
 
 def MACtoBCtransformation(Hs, MAC_Cov, MAC_decoding_order):
     BS_antennas = Hs[0].shape[1]
-    BC_Covs = []
+    BC_Covs = [np.zeros([BS_antennas, BS_antennas]) for _ in Hs]
     for k, ms in enumerate(MAC_decoding_order):
         H = Hs[ms]
         MS_antennas = H.shape[0]
@@ -49,20 +49,19 @@ def MACtoBCtransformation(Hs, MAC_Cov, MAC_decoding_order):
         Gms = GH[: len(D), :].conj().T
         np.testing.assert_almost_equal(Hms_eff, Fms @ np.diag(D) @ Gms.conj().T)
         # Compute downlink covariance (equation 35)
-        BC_Covs.append(
-            (
-                inv_sqrtm(B)
-                @ Fms
-                @ Gms.conj().T
-                @ sqrtm(A)
-                @ MAC_Cov[ms]
-                @ sqrtm(A)
-                @ Gms
-                @ Fms.conj().T
-                @ inv_sqrtm(B)
-            )
+        BC_Cov = (
+            inv_sqrtm(B)
+            @ Fms
+            @ Gms.conj().T
+            @ sqrtm(A)
+            @ MAC_Cov[ms]
+            @ sqrtm(A)
+            @ Gms
+            @ Fms.conj().T
+            @ inv_sqrtm(B)
         )
-    return [BC_Covs[k] for k in MAC_decoding_order]
+        BC_Covs[ms] = BC_Cov
+    return BC_Covs
 
 
 def inv_sqrtm(A):
@@ -218,7 +217,7 @@ def BC_rates(BC_Covs, Hs, BC_encoding_order):
         rate = log2det(np.eye(Nrx) + H @ BC_Cov @ H.conj().T @ np.linalg.inv(IPN))
         rates[user] = rate
         Sum_INT = Sum_INT + BC_Cov
-    assert all(rates)
+    assert all(rates is not None for r in rates)
     return rates
 
 

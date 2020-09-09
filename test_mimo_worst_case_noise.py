@@ -19,6 +19,7 @@ from .mimo import (
     ptp_capacity_cvx,
     inv_sqrtm,
     sqrtm,
+    logdet,
 )
 
 LOGGER = logging.getLogger(__name__)

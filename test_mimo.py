@@ -37,6 +37,27 @@ def seed():
     np.random.seed(42)
 
 
+import itertools
+
+
+def param_list_id(val):
+    return "/".join(str(v) for v in val)
+
+
+@pytest.mark.parametrize("order", itertools.permutations([0, 1, 2]), ids=param_list_id)
+def test_MACtoBCtransformation_simple(order):
+    H1 = np.array([[1, 0, 0]])
+    H2 = np.array([[0, 1, 0]])
+    H3 = np.array([[0, 0, 1]])
+    Cov1 = np.array([[1]])
+    Cov2 = np.array([[2]])
+    Cov3 = np.array([[3]])
+    MAC_rates_calc = MAC_rates([Cov1, Cov2, Cov3], [H1.T, H2.T, H3.T], order)
+    BC_Cov_trans = MACtoBCtransformation([H1, H2, H3], [Cov1, Cov2, Cov3], order)
+    BC_rates_calc = BC_rates(BC_Cov_trans, [H1, H2, H3], order)
+    assert MAC_rates_calc == pytest.approx(BC_rates_calc, 1e-3)
+
+
 @pytest.mark.parametrize("Ms_antennas_list, Bs_antennas", [([1, 2, 3], 2)])
 def test_MAC_rate_formulation(Ms_antennas_list, Bs_antennas):
     Hs = []
