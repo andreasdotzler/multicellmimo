@@ -262,19 +262,21 @@ def test_MACtoBCtransformation(MAC_fun, Ms_antennas_list, Bs_antennas):
         # broadcast, highest weight is encoded first, lowest weight sees no interference
         enc_last = MAC_decoding_order[0]
 
-
-#        BC_Cov_trans = MACtoBCtransformation(Hs, MAC_Covs, MAC_decoding_order)
-#        rates_BC_calc = BC_rates(BC_Cov_trans, Hs, list(reversed(MAC_decoding_order)))
-#        BC_Cov_trans_inv = MACtoBCtransformation(Hs, MAC_Covs, list(reversed(MAC_decoding_order)))
-#        rates_BC_calc_inv = BC_rates(BC_Cov_trans_inv, Hs, MAC_decoding_order)
-#        assert mac_rates == pytest.approx(rates_BC_calc, 1e-3)
+        LOGGER.info(f"MAC decoding order: {MAC_decoding_order}")
+        BC_Cov_trans = MACtoBCtransformation(Hs, MAC_Covs, MAC_decoding_order)
+        rates_BC_calc = BC_rates(BC_Cov_trans, Hs, list(reversed(MAC_decoding_order)))
+        assert mac_rates == pytest.approx(rates_BC_calc, 1e-3)
+        BC_Cov_trans_inv = MACtoBCtransformation(
+            Hs, MAC_Covs, list(reversed(MAC_decoding_order))
+        )
+        rates_BC_calc_inv = BC_rates(BC_Cov_trans_inv, Hs, MAC_decoding_order)
 
 
 @pytest.mark.parametrize("P", range(10))
 def test_project_eigenvalues_to_given_sum_cvx(P):
     aa = np.array([1, 2, 3, 4])
     projected = project_eigenvalues_to_given_sum_cvx(aa, P)
-    assert sum(projected) == pytest.approx(P, 1e-3)
+    assert sum(projected) == pytest.approx(P, 1e-16)
 
 
 @pytest.mark.parametrize(
