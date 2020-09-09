@@ -483,21 +483,20 @@ def test_waterfilling(power):
         assert w == pytest.approx(water_level[0], 1e-3)
 
     for a, b in zip(p1, p2):
-
         assert b == pytest.approx(a if a > 1e-3 else 0)
 
 
-def test_project_covariance():
+@pytest.mark.parametrize("P", [1, 10, 100])
+def test_project_covariance(P):
     Covs = [
         np.random.random([N, 5]) + np.random.random([N, 5]) * 1j for N in range(1, 5)
     ]
     Covs = [Cov @ Cov.conj().T for Cov in Covs]
-    for P in [1, 10, 100]:
-        pCovs = project_covariances(Covs, P)
-        pCovs_cvx = project_covariance_cvx(Covs, P)
-        # both matrix sets fulfill power constraint and have equal distance to the original set
-        assert sum([np.trace(Cov).real for Cov in pCovs]) - 1e-3 <= P
-        assert sum([np.trace(Cov).real for Cov in pCovs_cvx]) - 1e-3 <= P
-        d = sum([np.sum((Cov - pCov) ** 2) for Cov, pCov in zip(Covs, pCovs)])
-        d_cvx = sum([np.sum((Cov - pCov) ** 2) for Cov, pCov in zip(Covs, pCovs_cvx)])
-        assert d == pytest.approx(d_cvx, 1e-3)
+    pCovs = project_covariances(Covs, P)
+    pCovs_cvx = project_covariance_cvx(Covs, P)
+    # both matrix sets fulfill power constraint and have equal distance to the original set
+    assert sum([np.trace(Cov).real for Cov in pCovs]) - 1e-3 <= P
+    assert sum([np.trace(Cov).real for Cov in pCovs_cvx]) - 1e-3 <= P
+    d = sum([np.sum((Cov - pCov) ** 2) for Cov, pCov in zip(Covs, pCovs)])
+    d_cvx = sum([np.sum((Cov - pCov) ** 2) for Cov, pCov in zip(Covs, pCovs_cvx)])
+    assert d == pytest.approx(d_cvx, 1e-3)
