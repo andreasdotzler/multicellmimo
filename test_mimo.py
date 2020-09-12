@@ -1,6 +1,7 @@
 import itertools
 import logging
 import random
+import itertools
 
 import numpy as np
 import pytest
@@ -12,24 +13,18 @@ from .mimo import (
     MAC_rates,
     MAC_rates_ordered,
     MACtoBCtransformation,
-    inv_sqrtm,
-    sqrtm,
-    logdet,
     project_covariance_cvx,
     project_covariances,
     project_eigenvalues_to_given_sum_cvx,
     ptp_capacity,
     ptp_capacity_cvx,
     water_filling_cvx,
-    water_filling_iter,
+    water_filling,
 )
 
-LOGGER = logging.getLogger(__name__)
+from .utils import inv_sqrtm, sqrtm, logdet, log2det, inv, det, log, eye
 
-inv = np.linalg.inv
-det = np.linalg.det
-log = np.log
-eye = np.eye
+LOGGER = logging.getLogger(__name__)
 
 
 @pytest.fixture(scope="function", autouse=True)
@@ -37,7 +32,18 @@ def seed():
     np.random.seed(42)
 
 
-import itertools
+@pytest.mark.parametrize("power", [3, 8, 9, 12, 100])
+def test_waterfilling(power):
+
+    gains = [0.5, 0.2, 0.1]
+    p1 = water_filling_cvx(gains, power)
+    assert sum(p1) == pytest.approx(power, 1e-3)
+    p2 = water_filling(gains, power)
+    assert sum(p2) == pytest.approx(power, 1e-3)
+    # the water level is 1/gain + power for all active channels
+    water_level = [1 / g + p for g, p in zip(gains, p2) if p > 0]
+    assert water_level == pytest.approx([water_level[0] for _ in water_level], 1e-3)
+    assert p1 == pytest.approx(p2, abs=1e-3)
 
 
 def param_list_id(val):
@@ -362,6 +368,17 @@ def test_MAC(MAC_fun, Ntxs, Nrx):
     assert sum(rates) == pytest.approx(sum(rates_cvx), 1e-3)
 
 
+@pytest.mark.parametrize("MAC_fun", [MAC_cvx, MAC])
+@pytest.mark.parametrize("Ntxs, Nrx", [([1, 1, 1, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4], 4)])
+def test_MAC_wsr(MAC_fun, Ntxs, Nrx):
+    Hs = []
+    for Ntx in Ntxs:
+        Hs.append(np.random.random([Nrx, Ntx]) + np.random.random([Nrx, Ntx]) * 1j)
+
+    weights = np.random.random(len(Hs))
+    rates_cvx, MAC_Covs, order = MAC_fun(Hs, 100, weights)
+
+
 @pytest.mark.parametrize("Ntxs, Nrx", [([2], 2)])
 def test_MAC_ptp(Ntxs, Nrx):
     Hs = []
@@ -391,23 +408,6 @@ def test_MAC_vs_MACcvx(Ntxs, Nrx):
             100, 1e-3
         )
         assert rates_MAC == pytest.approx(rates_MAC_cvx, abs=0.1)
-
-
-@pytest.mark.parametrize("power", [3, 8, 9, 12, 100])
-def test_waterfilling(power):
-
-    gains = [0.5, 0.2, 0.1]
-    p1 = water_filling_cvx(gains, power)
-    assert sum(p1) == pytest.approx(power, 1e-3)
-    p2 = water_filling_iter(gains, power)
-    assert sum(p2) == pytest.approx(power, 1e-3)
-    # the water level is 1/gain + power for all active channels
-    water_level = [1 / g + p for g, p in zip(gains, p2) if p > 0]
-    for w in water_level:
-        assert w == pytest.approx(water_level[0], 1e-3)
-
-    for a, b in zip(p1, p2):
-        assert b == pytest.approx(a if a > 1e-3 else 0)
 
 
 @pytest.mark.parametrize("P", [1, 10, 100])

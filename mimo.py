@@ -3,24 +3,43 @@ import math
 
 import cvxpy as cp
 import numpy as np
-import pytest
+
+from .utils import inv_sqrtm, sqrtm, logdet, log2det, inv, det, log, eye
 
 LOGGER = logging.getLogger(__name__)
 
 
-inv = np.linalg.inv
-det = np.linalg.det
-log = np.log
-log2 = np.log2
-eye = np.eye
+def water_filling_cvx(ei, P):
+    assert all([e.imag == 0 for e in ei])
+    power = cp.Variable(len(ei))
+    alpha = cp.Parameter(len(ei), nonneg=True)
+    alpha.value = ei
+    obj = cp.Maximize(cp.sum(cp.log(1 + cp.multiply(power, alpha))))
+    constraints = [power >= 0, cp.sum(power) == P]
+    prob = cp.Problem(obj, constraints)
+    prob.solve(solver=cp.SCS, eps=1e-9)
+    if prob.status == "optimal":
+        return power.value
+    else:
+        return np.nan
 
 
-def logdet(X):
-    return log(np.real(det(X)))
-
-
-def log2det(X):
-    return log2(np.real(det(X)))
+def water_filling(ei, P):
+    assert all([e.imag == 0 for e in ei])
+    channel_gains = np.array(ei)
+    nonzero_index = channel_gains >= 10e-16
+    powers_aux = np.zeros(len(channel_gains))
+    powers = np.zeros(len(channel_gains))
+    while any(powers_aux <= 0):
+        LOGGER.debug(f"Waterfilling: {powers_aux} : nonzero_index {nonzero_index}")
+        channel_gains_aux = channel_gains[nonzero_index]
+        eta = (P + sum(1 / channel_gains_aux)) / sum(nonzero_index)
+        powers_aux = eta - (1 / channel_gains_aux)
+        powers = np.zeros(len(channel_gains))
+        powers[nonzero_index] = powers_aux
+        i = np.argmin(powers)
+        nonzero_index[i] = False
+    return powers[powers >= 0]
 
 
 def MACtoBCtransformation(Hs, MAC_Cov, MAC_decoding_order):
@@ -64,16 +83,6 @@ def MACtoBCtransformation(Hs, MAC_Cov, MAC_decoding_order):
     return BC_Covs
 
 
-def inv_sqrtm(A):
-    ei_d, V_d = np.linalg.eigh(A)
-    return V_d @ np.diag(ei_d ** -0.5) @ V_d.conj().T
-
-
-def sqrtm(A):
-    ei_d, V_d = np.linalg.eigh(A)
-    return V_d @ np.diag(ei_d ** 0.5) @ V_d.conj().T
-
-
 def ptp_capacity_cvx(H, P):
     Nrx, Ntx = H.shape
     Cov = cp.Variable([Ntx, Ntx], hermitian=True)
@@ -91,44 +100,11 @@ def ptp_capacity(H, P):
     HH_d = H.conj().T @ H
     ei_d, V_d = np.linalg.eigh(HH_d)
     ei_d = [max(e, 0) for e in ei_d]
-    power = water_filling_iter(ei_d, P)
+    power = water_filling(ei_d, P)
     Cov = V_d @ np.diag(power) @ V_d.conj().T
     rate = sum(math.log(1 + p * e, 2) for p, e in zip(power, ei_d))
     # TODO should return Uplink and Downlink covariance
     return rate, Cov
-
-
-def water_filling_cvx(ei, P):
-    assert all([e.imag == 0 for e in ei])
-    power = cp.Variable(len(ei))
-    alpha = cp.Parameter(len(ei), nonneg=True)
-    alpha.value = ei
-    obj = cp.Maximize(cp.sum(cp.log(1 + cp.multiply(power, alpha))))
-    constraints = [power >= 0, cp.sum(power) == P]
-    prob = cp.Problem(obj, constraints)
-    prob.solve(solver=cp.SCS, eps=1e-9)
-    if prob.status == "optimal":
-        return power.value
-    else:
-        return np.nan
-
-
-def water_filling_iter(ei, P):
-    assert all([e.imag == 0 for e in ei])
-    channel_gains = np.array(ei)
-    nonzero_index = channel_gains >= 10e-16
-    powers_aux = np.zeros(len(channel_gains))
-    powers = np.zeros(len(channel_gains))
-    while any(powers_aux <= 0):
-        LOGGER.debug(f"Waterfilling: {powers_aux} : nonzero_index {nonzero_index}")
-        channel_gains_aux = channel_gains[nonzero_index]
-        eta = (P + sum(1 / channel_gains_aux)) / sum(nonzero_index)
-        powers_aux = eta - (1 / channel_gains_aux)
-        powers = np.zeros(len(channel_gains))
-        powers[nonzero_index] = powers_aux
-        i = np.argmin(powers)
-        nonzero_index[i] = False
-    return powers[powers >= 0]
 
 
 def argsort(weights, reverse=False):
