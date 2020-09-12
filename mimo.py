@@ -207,6 +207,34 @@ def project_eigenvalues_to_given_sum_cvx(e, P):
     return x.value
 
 
+def project_eigenvalues_to_given_sum(e, P):
+
+    # sort them
+    sorted_eigenvalues = sorted(np.real(e))
+
+    # find current sum
+    current_sum = sum(sorted_eigenvalues)
+    # find number of nonzero entries after subtraction
+    for values_smaller_zero, val in enumerate(sorted_eigenvalues):
+
+        values_geq_zero = len(sorted_eigenvalues) - values_smaller_zero
+        assert len(sorted_eigenvalues[values_smaller_zero:]) == values_geq_zero
+        # check if this is enough
+        max_sum_reduction = val * values_geq_zero + sum(
+            sorted_eigenvalues[:values_smaller_zero]
+        )
+
+        if max_sum_reduction > (current_sum - P):
+            break
+
+    reduction = (
+        current_sum - P - sum(sorted_eigenvalues[:values_smaller_zero])
+    ) / values_geq_zero
+    projected_eigenvalues = e - reduction
+    projected_eigenvalues[projected_eigenvalues < 0] = 0
+    return projected_eigenvalues
+
+
 def project_covariance_cvx(Xs, P):
     Covs = [cp.Variable([X.shape[0], X.shape[0]], hermitian=True) for X in Xs]
     obj = cp.Minimize(cp.sum([cp.sum_squares(Cov - X) for Cov, X in zip(Covs, Xs)]))
@@ -231,7 +259,7 @@ def project_covariances(Covs, P):
     if sum(eigenvalues) <= P:
         return Covs
     # TODO, do this without CVX
-    projected = project_eigenvalues_to_given_sum_cvx(eigenvalues, P)
+    projected = project_eigenvalues_to_given_sum(eigenvalues, P)
     assert sum(projected) <= P * 1.01
     # update
     Covs = []

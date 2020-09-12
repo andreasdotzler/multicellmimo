@@ -16,6 +16,7 @@ from .mimo import (
     project_covariance_cvx,
     project_covariances,
     project_eigenvalues_to_given_sum_cvx,
+    project_eigenvalues_to_given_sum,
     ptp_capacity,
     ptp_capacity_cvx,
     water_filling_cvx,
@@ -300,10 +301,61 @@ def test_MACtoBCtransformation(MAC_fun, Ms_antennas_list, Bs_antennas):
 
 
 @pytest.mark.parametrize("P", range(10))
-def test_project_eigenvalues_to_given_sum_cvx(P):
+def test_project_eigenvalues_to_given_sum(P):
     aa = np.array([1, 2, 3, 4])
-    projected = project_eigenvalues_to_given_sum_cvx(aa, P)
-    assert sum(projected) == pytest.approx(P, 1e-16)
+    projected_cvx = project_eigenvalues_to_given_sum_cvx(aa, P)
+    assert sum(projected_cvx) == pytest.approx(P, 1e-16)
+    projected_iter = project_eigenvalues_to_given_sum(aa, P)
+    assert sum(projected_iter) == pytest.approx(P, 1e-16)
+    assert projected_cvx == pytest.approx(projected_iter, 1e-3)
+
+
+def test_project_eigenvalues_to_given_sum_fixed():
+    P = 100
+    aa = [
+        7.076247976514855,
+        28.344431290674088,
+        17.663314481115282,
+        23.889872263239067,
+        20.75705972195624,
+        0.5124001194795075,
+        0.8638384745201617,
+        3.176784548874144,
+        18.375385961781994,
+        0.06686895043209082,
+        2.502348602875409,
+        8.200418503538739,
+        18.01942915307511,
+        0.029459053022672304,
+        1.3742209049525131,
+        3.5858675934148465,
+        10.67423069937368,
+        1.0801476177778597,
+        6.889382308463901,
+        0.8980058039970119,
+        2.396287139351798,
+        4.195074357120739,
+        0.9262494132153511,
+        0.09987810920609301,
+        1.053940083729474,
+        4.312417260270158,
+        0.05445766324476466,
+        0.8215124551536365,
+        4.129842087247722,
+        1.5471667400228355,
+        0.03863241360245657,
+        0.42514417652757946,
+        2.3293398856492553,
+        3.005639011005292,
+        0.07560094055669457,
+        0.14976058218445337,
+        0.45934365283250933,
+    ]
+    projected_cvx = project_eigenvalues_to_given_sum_cvx(aa, P)
+    assert sum(projected_cvx) == pytest.approx(P, 1e-2)
+    projected_iter = project_eigenvalues_to_given_sum(aa, P)
+    assert sum(projected_iter) == pytest.approx(P, 1e-2)
+    assert projected_cvx == pytest.approx(projected_iter, abs=1e-2)
 
 
 @pytest.mark.parametrize(
