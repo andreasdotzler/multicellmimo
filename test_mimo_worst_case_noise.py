@@ -34,6 +34,35 @@ def seed():
     np.random.seed(42)
 
 
+@pytest.mark.parametrize("comp", [0, 1])
+@pytest.mark.parametrize("Bs_antennas", [1, 2, 3])
+def test_uplink_noise_dual(comp, Bs_antennas):
+    Ms_antennas = 2
+    P = 100
+    sigma = 5
+    H = (
+        np.random.random([Ms_antennas, Bs_antennas])
+        + comp * np.random.random([Ms_antennas, Bs_antennas]) * 1j
+    )
+    # create random uplink noise covariance Z with tr(Z) = sigma
+    R = (
+        np.random.random([Bs_antennas, Bs_antennas])
+        + comp * np.random.random([Bs_antennas, Bs_antennas]) * 1j
+    )
+    Z = R @ R.conj().T
+    Z = sigma * Z / np.trace(Z)
+    assert np.real(np.trace(Z)) == pytest.approx(sigma)
+    H_eff = inv_sqrtm(Z) @ H.conj().T
+    rate_p, Sigma_eff = ptp_capacity_cvx(H_eff, P)
+    rate_i, Sigma = ptp_capacity_cvx(H.conj().T, P, Z)
+    assert rate_i == pytest.approx(rate_p, 1e-3)
+    rate_d, (W, la) = ptp_capacity_uplink_cvx_dual(H, P, Z)
+    L = sqrtm(Z) @ W @ sqrtm(Z)
+    X = inv(L)
+    assert log(det(X)) / log(2) == pytest.approx(rate_i, 1e-2)
+    assert rate_i == pytest.approx(rate_d, 1e-3)
+
+
 @pytest.mark.parametrize("Ms_antennas", [3])
 @pytest.mark.parametrize("Bs_antennas", [3])
 def test_minimax_ptp(Ms_antennas, Bs_antennas):
@@ -55,34 +84,6 @@ def test_minimax_ptp(Ms_antennas, Bs_antennas):
     Phi_2 = Omega
 
     # include subspace parameterization
-
-
-@pytest.mark.parametrize("Ms_antennas", [1, 2, 3])
-@pytest.mark.parametrize("Bs_antennas", [1, 2, 3])
-def test_ptp_dual(Ms_antennas, Bs_antennas):
-    P = 100
-    sigma = 1
-
-    H = (
-        np.random.random([Ms_antennas, Bs_antennas])
-        # + np.random.random([Ms_antennas, Bs_antennas]) * 1j
-    )
-    Z = sigma / Bs_antennas * np.eye(Bs_antennas)
-    assert np.trace(Z) == pytest.approx(sigma)
-    rate_p, Q_p = ptp_capacity(H, P)
-    assert np.trace(Q_p) == pytest.approx(P)
-    rate_d = ptp_capacity_uplink_cvx_dual(H, P / Bs_antennas, Z)[0]
-    assert rate_p == pytest.approx(rate_d, 1e-3)
-
-    # create random uplink noise
-    R = np.random.random([Bs_antennas, Bs_antennas])
-    Z = R @ R.T
-    Z = sigma / Bs_antennas * Z
-    rate_d = ptp_capacity_uplink_cvx_dual(H, P, Z)[0]
-    H_eff = inv_sqrtm(Z) @ H.T
-    rate_p, Sigma_eff = ptp_capacity(H_eff, P / sigma)
-    rate_c = (log(det(Z + H.T @ Sigma_eff @ H)) - log(det(Z))) / np.log(2)
-    assert rate_c == pytest.approx(rate_p, 1e-3)
 
 
 # worst case noise, like white

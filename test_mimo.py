@@ -385,9 +385,10 @@ def test_p2p_uplink_downlink(Nrx, Ntx):
     assert rate_downlink == pytest.approx(rate_uplink, 1e-2)
 
 
+@pytest.mark.parametrize("comp", [1, 0], ids=["complex", "real"])
 @pytest.mark.parametrize("Nrx, Ntx", [(2, 2), (5, 3), (3, 5), (1, 4), (4, 1)])
-def test_p2p_vs_cvx(Nrx, Ntx):
-    H = np.random.random([Nrx, Ntx]) + np.random.random([Nrx, Ntx]) * 1j
+def test_p2p_vs_cvx(comp, Nrx, Ntx):
+    H = np.random.random([Nrx, Ntx]) + comp * np.random.random([Nrx, Ntx]) * 1j
     rate, Cov = ptp_capacity(H, 100)
     assert np.trace(Cov) == pytest.approx(100, 1e-3)
     rate_cvx, Cov_cvx = ptp_capacity_cvx(H, 100)

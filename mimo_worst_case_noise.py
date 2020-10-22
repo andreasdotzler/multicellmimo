@@ -97,7 +97,10 @@ def noise_outer_approximation(f_is, subgradients, sigma):
     cost = mu
     positivity = Z >> np.eye(Ntx) * 0.0001
     power = cp.trace(Z) <= sigma
-    cons = [mu >= f_i + cp.trace(S @ Z) for S, f_i in zip(subgradients, f_is)]
+    cons = [
+        mu >= np.real(f_i) + cp.real(cp.trace(S @ Z))
+        for S, f_i in zip(subgradients, f_is)
+    ]
     constraints = cons + [positivity, power]
     prob = cp.Problem(cp.Minimize(cost), constraints)
     prob.solve(solver=cp.SCS, eps=1e-9)
@@ -131,14 +134,20 @@ def ptp_worst_case_noise_gradient(H, P, sigma=1):
     return rate_i, (Z, W)
 
 
-def ptp_capacity_uplink_cvx_dual(H, Ps, Z):
+def ptp_capacity_uplink_cvx_dual(H, P, Z):
     Nrx, Ntx = H.shape
-    W = cp.Variable([Ntx, Ntx], symmetric=True)
+    W = cp.Variable([Ntx, Ntx], hermitian=True)
     la = cp.Variable(1)
-    cost = -cp.log_det(W) - log(det(Z)) + cp.trace(Z @ W) + Ps * la * np.trace(Z) - Ntx
+    cost = (
+        -cp.real(cp.log_det(W))
+        - np.real(log(det(Z)))
+        + cp.real(cp.trace(Z @ W))
+        + P * la
+        - Ntx
+    )
     positivity_W = W >> 0
     postitvity_la = la >= 0
-    cons = cp.multiply(la, np.eye(Nrx)) >> H @ W @ H.T
+    cons = cp.multiply(la, np.eye(Nrx)) >> H @ W @ H.conj().T
     constraints = [cons, positivity_W, postitvity_la]
     prob = cp.Problem(cp.Minimize(cost), constraints)
     prob.solve(solver=cp.SCS, eps=1e-9)
