@@ -83,11 +83,15 @@ def MACtoBCtransformation(Hs, MAC_Cov, MAC_decoding_order):
     return BC_Covs
 
 
-def ptp_capacity_cvx(H, P):
+def ptp_capacity_cvx(H, P, Z=None):
     Nrx, Ntx = H.shape
     Cov = cp.Variable([Ntx, Ntx], hermitian=True)
     I = np.eye(Ntx)
-    cost = cp.log_det(I + Cov @ H.conj().T @ H)
+    if Z is None:
+        cost = cp.log_det(I + Cov @ H.conj().T @ H)
+    else:
+        assert (Nrx, Nrx) == Z.shape
+        cost = cp.log_det(I + Cov @ H.conj().T @ inv(Z) @ H)
     power = cp.real(cp.trace(Cov)) <= P
     positivity = Cov >> 0
     constraints = [power, positivity]
@@ -96,8 +100,12 @@ def ptp_capacity_cvx(H, P):
     return prob.value / np.log(2), Cov.value
 
 
-def ptp_capacity(H, P):
-    HH_d = H.conj().T @ H
+def ptp_capacity(H, P, Z=None):
+    if Z is None:
+        HH_d = H.conj().T @ H
+    else:
+        assert H.shape[0] == Z.shape[0]
+        HH_d = H.conj().T @ inv(Z) @ H
     ei_d, V_d = np.linalg.eigh(HH_d)
     ei_d = [max(e, 0) for e in ei_d]
     power = water_filling(ei_d, P)
