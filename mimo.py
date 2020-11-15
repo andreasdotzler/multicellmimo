@@ -100,12 +100,27 @@ def ptp_capacity_cvx(H, P, Z=None):
     return prob.value / np.log(2), Cov.value
 
 
-def ptp_capacity(H, P, Z=None):
+def ptp_capacity(H, P, Z=None, inf_lim=1e-9):
     if Z is None:
         HH_d = H.conj().T @ H
     else:
         assert H.shape[0] == Z.shape[0]
-        HH_d = H.conj().T @ inv(Z) @ H
+        import scipy.linalg
+
+        T, K = scipy.linalg.schur(Z)
+        es = np.real(T.diagonal())
+        low = es < inf_lim
+        inf_constraints = []
+        for col_nr, e in enumerate(es):
+            if e >= inf_lim:
+                continue
+            col = K[:, [col_nr]]
+            if np.linalg.norm(col.conj().T @ H) > inf_lim:
+                inf_constraints.append(col * 10*inf_lim @ col.conj().T)
+        if len(inf_constraints):
+            import ipdb; ipdb.set_trace()
+            return np.inf, inf_constraints
+        HH_d = H.conj().T @ K[:, ~low] * 1 / es[~low] @ K[:, ~low].conj().T @ H
     ei_d, V_d = np.linalg.eigh(HH_d)
     ei_d = [max(e, 0) for e in ei_d]
     power = water_filling(ei_d, P)
@@ -216,7 +231,7 @@ def project_eigenvalues_to_given_sum_cvx(e, P):
 
 
 def project_eigenvalues_to_given_sum(e, P):
-
+    assert np.all(np.imag(e) == 0)
     # sort them
     sorted_eigenvalues = sorted(np.real(e))
 
@@ -264,10 +279,10 @@ def project_covariances(Covs, P):
     # project to constraint set: operate on eigenvalues
     # flatten a list of lists https://stackoverflow.com/a/952952
     eigenvalues = [item for sublist in eigs for item in sublist]
+    projected = project_eigenvalues_to_given_sum(eigenvalues, P)
+
     if sum(eigenvalues) <= P:
         return Covs
-    # TODO, do this without CVX
-    projected = project_eigenvalues_to_given_sum(eigenvalues, P)
     assert sum(projected) <= P * 1.01
     # update
     Covs = []
