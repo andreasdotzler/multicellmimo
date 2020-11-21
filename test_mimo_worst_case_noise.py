@@ -35,6 +35,36 @@ def seed():
     np.random.seed(45)
 
 
+def test_noise_simple():
+    P = 12
+    sigma = 3
+    H = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
+    assert (3, 3) == H.shape
+    rate_no_channel = log(det(eye(3) + P / sigma * H.conj().T @ H))
+    LOGGER.debug(f"Rate w/o channel knowledge {rate_no_channel}")
+    Z = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
+    Sigma = np.array([[4, 0, 0], [0, 4, 0], [0, 0, 4]])
+    rate_known = log(det(eye(3) + inv(Z) @ H @ Sigma @ H.conj().T))
+    assert rate_known == pytest.approx(rate_no_channel)
+    rate_calc = ptp_capacity(H, P, Z)[0]
+    assert rate_known == pytest.approx(rate_calc)
+    rate_worst_case, (Z, W) = ptp_worst_case_noise_approx(H.conj().T, P, sigma)
+    assert rate_worst_case == pytest.approx(rate_no_channel, 1e-3)
+
+    H = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 0]])
+    assert (3, 3) == H.shape
+    rate_no_channel = log(det(eye(3) + P / sigma * H.conj().T @ H))
+    LOGGER.debug(f"Rate w/o channel knowledge {rate_no_channel}")
+    Z = np.array([[1.5, 0, 0], [0, 1.5, 0], [0, 0, 0]])
+    Sigma = np.array([[6, 0, 0], [0, 6, 0], [0, 0, 0]])
+    rate_known = log(det(eye(3) + pinv(Z) @ H @ Sigma @ H.conj().T))
+    assert rate_known == pytest.approx(rate_no_channel)
+    rate_calc = ptp_capacity(H, P, Z)[0]
+    assert rate_known == pytest.approx(rate_calc)
+    rate_worst_case, (Z, W) = ptp_worst_case_noise_approx(H.conj().T, P, sigma)
+    assert rate_worst_case == pytest.approx(rate_no_channel, 1e-3)
+
+
 @pytest.mark.parametrize("comp", [0, 1], ids=["real", "complex"])
 def test_noise_rank_def(comp):
     P = 100
@@ -53,17 +83,6 @@ def test_noise_rank_def(comp):
     Z_red = Z[[0, 1], :][:, [0, 1]]
     rate_r, Sigma_r = ptp_capacity(H_red, P, Z_red)
     assert rate_r == pytest.approx(rate_i, 1e-2)
-    H_full = np.array([[1, 0], [0, 1], [1, 1]])
-    inf_lim = 1e-5
-    rate_d, inf_constraint = ptp_capacity(H_full, P, Z, inf_lim=inf_lim)
-    assert rate_d == np.inf
-    assert np.allclose(
-        inf_constraint[0], [[0, 0, 0], [0, 0, 0], [0, 0, inf_lim]]
-    )  # + comp * 1j * [[1, 0, 0],[0, 1, 0], [0, 0, 0]]
-    rate_f, _ = ptp_capacity(H_full, P, Z + inf_constraint[0], inf_lim=inf_lim)
-    assert rate_f != np.inf
-    import ipdb; ipdb.set_trace()
-    rate_worst_case, (Z, W) = ptp_worst_case_noise_approx(H_full.T,P,6)
 
 
 def test_noise_rank_def2():
@@ -86,9 +105,8 @@ def test_noise_rank_def2():
 @pytest.mark.parametrize("Ms_antennas", [1, 2, 3])
 @pytest.mark.parametrize("Bs_antennas", [1, 2, 3])
 def test_ptp_worstcase(comp, Ms_antennas, Bs_antennas):
-    H = (
-        np.random.random([Ms_antennas, Bs_antennas])
-        + comp * 1j *np.random.random([Ms_antennas, Bs_antennas]) 
+    H = np.random.random([Ms_antennas, Bs_antennas]) + comp * 1j * np.random.random(
+        [Ms_antennas, Bs_antennas]
     )
     P = 1
     sigma = 1
@@ -100,12 +118,11 @@ def test_ptp_worstcase(comp, Ms_antennas, Bs_antennas):
     assert np.trace(Sigma_no_channel) == pytest.approx(P)
     assert np.trace(Z_no_channel) == pytest.approx(sigma)
 
-    rate_no_channel = np.real(log(det(eye(Bs_antennas) + P / sigma * H.conj().T @ H))) 
+    rate_no_channel = np.real(log(det(eye(Bs_antennas) + P / sigma * H.conj().T @ H)))
     rate_worst_case, (Z, W) = ptp_worst_case_noise_approx(H, P, sigma)
     assert np.allclose(rate_worst_case, rate_no_channel, rtol=1e-1)
-    rate_calc = ptp_capacity(H.conj().T, P, Z)[0] 
+    rate_calc = ptp_capacity(H.conj().T, P, Z)[0]
     assert rate_worst_case == pytest.approx(rate_calc, 1e-2)
-
 
 
 @pytest.mark.parametrize("Ms_antennas", [3])

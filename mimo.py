@@ -100,27 +100,11 @@ def ptp_capacity_cvx(H, P, Z=None):
     return prob.value, Cov.value
 
 
-def ptp_capacity(H, P, Z=None, inf_lim=1e-9):
+def ptp_capacity(H, P, Z=None, rcond=1e-6):
     if Z is None:
         HH_d = H.conj().T @ H
     else:
-        assert H.shape[0] == Z.shape[0]
-        import scipy.linalg
-
-        T, K = scipy.linalg.schur(Z)
-        es = np.real(T.diagonal())
-        low = es < inf_lim
-        inf_constraints = []
-        for col_nr, e in enumerate(es):
-            if e >= inf_lim:
-                continue
-            col = K[:, [col_nr]]
-            if np.linalg.norm(col.conj().T @ H) > inf_lim:
-                inf_constraints.append(col * 10*inf_lim @ col.conj().T)
-        if len(inf_constraints):
-            import ipdb; ipdb.set_trace()
-            return np.inf, inf_constraints
-        HH_d = H.conj().T @ K[:, ~low] * 1 / es[~low] @ K[:, ~low].conj().T @ H
+        HH_d = H.conj().T @ pinv(Z, rcond, hermitian=True) @ H
     ei_d, V_d = np.linalg.eigh(HH_d)
     ei_d = [max(e, 0) for e in ei_d]
     power = water_filling(ei_d, P)
