@@ -45,7 +45,7 @@ def test_noise_rank_def(comp):
     Z = np.array([[2, 0, 0], [0, 4, 0], [0, 0, 0]])
     rate_i, Sigma_i = ptp_capacity(H, P, Z)
     X_i = eye(3) + pinv_sqrtm(Z) @ H @ Sigma_i @ H.conj().T @ pinv_sqrtm(Z)
-    assert log(det(X_i)) / log(2) == pytest.approx(rate_i, 1e-2)
+    assert log(det(X_i)) == pytest.approx(rate_i, 1e-2)
     W_i = pinv_sqrtm(Z) @ inv(X_i) @ pinv_sqrtm(Z)
     assert np.allclose(pinv_sqrtm(Z) @ pinv_sqrtm(Z), pinv(Z))
 
@@ -121,9 +121,7 @@ def test_minimax_ptp(Ms_antennas, Bs_antennas):
     R = B = np.eye(Ms_antennas) * P / Ms_antennas
     rate_d, Q, (Omega, tr, K) = ptp_capacity_mimimax(H=H, R=R, C=C, P=P)
     Sigma = -inv(R + H @ Q @ H.conj().T) + inv(R)
-    rate_u = logdet(
-        np.eye(Bs_antennas) + np.linalg.inv(Omega) @ H.conj().T @ Sigma @ H
-    ) / np.log(2)
+    rate_u = logdet(np.eye(Bs_antennas) + np.linalg.inv(Omega) @ H.conj().T @ Sigma @ H)
     assert rate_u == pytest.approx(rate_d, 1e-3)
     Phi_1 = H.conj().T @ inv(R + H @ Q @ H.conj().T) @ H + K
     Phi_2 = Omega

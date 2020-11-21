@@ -161,7 +161,7 @@ def test_vishwanath_example1():
     P = 1
     P1 = np.array([[0.0720, 0.1827], [0.1827, 0.4634]])
     P2 = np.array([[0.0000, 0.0026], [0.0026, 0.4646]])
-    sum_rate = 2.2615 / np.log(2)
+    sum_rate = 2.2615
     MAC_rates, MAC_Covs, order = MAC([H1.T, H2.T], P, [1, 1])
     np.testing.assert_allclose(MAC_Covs, [P1, P2], atol=1e-3)
 
@@ -203,8 +203,8 @@ def test_vishwanath_example2():
     I = np.eye(2)
     MAC_sum_rate = np.linalg.slogdet(
         I + 1 / 3 * (H1.conj().T @ H1 + H2.conj().T @ H2 + H3.conj().T @ H3)
-    )[1] / np.log(2)
-    MAC_sum_rate_paper = 0.8109 / np.log(2)
+    )[1]
+    MAC_sum_rate_paper = 0.8109
     assert MAC_sum_rate == pytest.approx(MAC_sum_rate_paper, 1e-3)
     MAC_rates, MAC_Covs, order = MAC([H1.T, H2.T, H3.T], P, [0.9999, 1, 1.0001])
     assert sum(MAC_rates) == pytest.approx(MAC_sum_rate, 1e-3)
@@ -284,7 +284,7 @@ def test_MACtoBCtransformation(MAC_fun, Ms_antennas_list, Bs_antennas):
             + MAC_Hs[dec_last] @ MAC_Covs[dec_last] @ MAC_Hs[dec_last].conj().T
         )
         # sort H and MAC_Covs
-        assert r_h[1] / np.log(2) == pytest.approx(mac_rates[dec_last], 1e-3)
+        assert r_h[1] == pytest.approx(mac_rates[dec_last], 1e-3)
         mac_rates_calc = MAC_rates(MAC_Covs, MAC_Hs, MAC_decoding_order)
         assert mac_rates == pytest.approx(mac_rates_calc, 1e-3)
         # broadcast, highest weight is encoded first, lowest weight sees no interference
@@ -361,11 +361,11 @@ def test_project_eigenvalues_to_given_sum_fixed():
 @pytest.mark.parametrize(
     "H, P, r_exp, Cov_exp",
     [
-        (np.array([[1, 0], [0, 0]]), 1, 1, np.array([[1, 0], [0, 0]])),
-        (np.array([[1j, 0], [0, 0]]), 1, 1, np.array([[1, 0], [0, 0]])),
-        (np.array([[1, 0], [0, 1]]), 2, 2, np.array([[1, 0], [0, 1]])),
-        (np.array([[1j, 0], [0, 1]]), 2, 2, np.array([[1, 0], [0, 1]])),
-        (np.array([[0, 1j], [1j, 0]]), 2, 2, np.array([[1, 0], [0, 1]])),
+        (np.array([[1, 0], [0, 0]]), 1, 1 * np.log(2), np.array([[1, 0], [0, 0]])),
+        (np.array([[1j, 0], [0, 0]]), 1, 1 * np.log(2), np.array([[1, 0], [0, 0]])),
+        (np.array([[1, 0], [0, 1]]), 2, 2 * np.log(2), np.array([[1, 0], [0, 1]])),
+        (np.array([[1j, 0], [0, 1]]), 2, 2 * np.log(2), np.array([[1, 0], [0, 1]])),
+        (np.array([[0, 1j], [1j, 0]]), 2, 2 * np.log(2), np.array([[1, 0], [0, 1]])),
     ],
 )
 def test_p2p(H, P, r_exp, Cov_exp):
@@ -414,7 +414,7 @@ def test_MAC(MAC_fun, Ntxs, Nrx):
         for k in order[ind + 1 :]:
             IPN = IPN + Hs[k] @ MAC_Covs[k] @ Hs[k].conj().T
         HCH = H @ MAC_Cov @ H.conj().T
-        r = (logdet(IPN + HCH) - logdet(IPN)) / np.log(2)
+        r = logdet(IPN + HCH) - logdet(IPN)
         assert r == pytest.approx(r_cvx, 1e-3)
         rates.append(r)
     assert sum([np.trace(MAC_Cov) for MAC_Cov in MAC_Covs]) == pytest.approx(100, 1e-3)

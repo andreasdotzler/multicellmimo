@@ -97,7 +97,7 @@ def ptp_capacity_cvx(H, P, Z=None):
     constraints = [power, positivity]
     prob = cp.Problem(cp.Maximize(cost), constraints)
     prob.solve(solver=cp.SCS, eps=1e-9)
-    return prob.value / np.log(2), Cov.value
+    return prob.value, Cov.value
 
 
 def ptp_capacity(H, P, Z=None, inf_lim=1e-9):
@@ -125,7 +125,7 @@ def ptp_capacity(H, P, Z=None, inf_lim=1e-9):
     ei_d = [max(e, 0) for e in ei_d]
     power = water_filling(ei_d, P)
     Cov = V_d @ np.diag(power) @ V_d.conj().T
-    rate = sum(math.log(1 + p * e, 2) for p, e in zip(power, ei_d))
+    rate = sum(math.log(1 + p * e) for p, e in zip(power, ei_d))
     # TODO should return Uplink and Downlink covariance
     return rate, Cov
 
@@ -198,7 +198,7 @@ def MAC_rates_ordered(MAC_Covs, Hs):
     for MAC_Cov, H in zip(MAC_Covs, Hs):
         Znew = Z + H @ MAC_Cov @ H.conj().T
         Zs.append(Znew)
-        rate = log2det(Znew) - log2det(Z)
+        rate = logdet(Znew) - logdet(Z)
         rates.append(rate)
         Z = Znew
     return rates, Zs
@@ -213,7 +213,7 @@ def BC_rates(BC_Covs, Hs, BC_encoding_order):
         H = Hs[user]
         Nrx = H.shape[0]
         IPN = np.eye(Nrx) + H @ Sum_INT @ H.conj().T
-        rate = log2det(np.eye(Nrx) + H @ BC_Cov @ H.conj().T @ np.linalg.inv(IPN))
+        rate = logdet(np.eye(Nrx) + H @ BC_Cov @ H.conj().T @ np.linalg.inv(IPN))
         rates[user] = rate
         Sum_INT = Sum_INT + BC_Cov
     assert all(rates is not None for r in rates)
@@ -324,7 +324,7 @@ def MAC(Hs, P, weights, rate_threshold=1e-6, max_iterations=30):
         for k, (MAC_Cov, H) in enumerate(zip(MAC_Covs_sorted, Hs_sorted)):
             dMAC_Cov = np.zeros([MAC_Cov.shape[0], MAC_Cov.shape[0]])
             for Z_inv, alpha in zip(Z_invs[k:], alphas[k:]):
-                dMAC_Cov = dMAC_Cov + 1 / np.log(2) * alpha * H.conj().T @ Z_inv @ H
+                dMAC_Cov = dMAC_Cov + alpha * H.conj().T @ Z_inv @ H
             dMAC_Covs.append(dMAC_Cov)
         dMAC_Covs_trace = sum([np.trace(dMAC_Cov) for dMAC_Cov in dMAC_Covs])
         dMAC_Covs = [P / dMAC_Covs_trace * dMAC_Cov for dMAC_Cov in dMAC_Covs]
