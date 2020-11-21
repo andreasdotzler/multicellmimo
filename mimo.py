@@ -4,7 +4,7 @@ import math
 import cvxpy as cp
 import numpy as np
 
-from .utils import inv_sqrtm, sqrtm, logdet, log2det, inv, det, log, eye
+from .utils import inv_sqrtm, sqrtm, logdet, inv, det, log, eye, pinv
 
 LOGGER = logging.getLogger(__name__)
 

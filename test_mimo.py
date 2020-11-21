@@ -23,7 +23,7 @@ from .mimo import (
     water_filling,
 )
 
-from .utils import inv_sqrtm, sqrtm, logdet, log2det, inv, det, log, eye
+from .utils import inv_sqrtm, sqrtm, logdet, inv, det, log, eye
 
 LOGGER = logging.getLogger(__name__)
 
