@@ -257,6 +257,21 @@ def test_MACtoBCtransformation_ptp(Ms_antennas, Bs_antennas):
     assert rate_BC == pytest.approx(rates_BC_calc[0], 1e-3)
 
 
+@pytest.mark.parametrize("comp", [1, 0], ids=["complex", "real"])
+@pytest.mark.parametrize("P", [1, 1000])
+@pytest.mark.parametrize("MAC_fun", [MAC, MAC_cvx])
+@pytest.mark.parametrize("Ms_antennas_list, Bs_antennas", [([1, 2, 3], 2)])
+def test_MACwithUplinkNoise(MAC_fun, H_MAC, Ms_antennas_list, Bs_antennas, C, comp, P):
+    weights = [4,3,2]
+    MAC_Hs = [H.conj().T for H in H_MAC]
+    mac_rates_w_noise, MAC_Covs, order = MAC_fun(MAC_Hs, P, weights, Omega=C)
+    MAC_Hs = [inv_sqrtm(C)@H.conj().T for H in H_MAC]
+    mac_rates_eff, MAC_Covs_eff, order = MAC_fun(MAC_Hs, P, weights)
+    wsr_w_noise = sum([w*r for w,r in zip(weights, mac_rates_w_noise)])
+    wsr_eff = sum([w*r for w,r in zip(weights, mac_rates_eff)])
+    assert wsr_w_noise == pytest.approx(wsr_eff, 1e-1)
+
+
 @pytest.mark.parametrize("MAC_fun", [MAC, MAC_cvx])
 @pytest.mark.parametrize("Ms_antennas_list, Bs_antennas", [([1, 2, 3], 2)])
 def test_MACtoBCtransformation(MAC_fun, Ms_antennas_list, Bs_antennas):
