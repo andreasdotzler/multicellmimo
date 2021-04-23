@@ -253,13 +253,13 @@ def test_MACtoBCtransformation_ptp(Ms_antennas, Bs_antennas):
 @pytest.mark.parametrize("MAC_fun", [MAC, MAC_cvx])
 @pytest.mark.parametrize("Ms_antennas_list, Bs_antennas", [([1, 2, 3], 2)])
 def test_MACwithUplinkNoise(MAC_fun, H_MAC, Ms_antennas_list, Bs_antennas, C, comp, P):
-    weights = [4,3,2]
+    weights = [4, 3, 2]
     MAC_Hs = [H.conj().T for H in H_MAC]
     mac_rates_w_noise, MAC_Covs, order = MAC_fun(MAC_Hs, P, weights, Omega=C)
-    MAC_Hs = [inv_sqrtm(C)@H.conj().T for H in H_MAC]
+    MAC_Hs = [inv_sqrtm(C) @ H.conj().T for H in H_MAC]
     mac_rates_eff, MAC_Covs_eff, order = MAC_fun(MAC_Hs, P, weights)
-    wsr_w_noise = sum([w*r for w,r in zip(weights, mac_rates_w_noise)])
-    wsr_eff = sum([w*r for w,r in zip(weights, mac_rates_eff)])
+    wsr_w_noise = sum([w * r for w, r in zip(weights, mac_rates_w_noise)])
+    wsr_eff = sum([w * r for w, r in zip(weights, mac_rates_eff)])
     assert wsr_w_noise == pytest.approx(wsr_eff, 1e-1)
 
 
@@ -273,7 +273,7 @@ def test_MACtoBCtransformation(MAC_fun, Ms_antennas_list, Bs_antennas):
             #            + np.random.random([Ms_antennas, Bs_antennas]) * 1j
         )
     MAC_Hs = [H.conj().T for H in Hs]
-    w = [0,4,10]
+    w = [0, 4, 10]
     # broadcast, user with larges weight is encoded first https://arxiv.org/pdf/0901.2401.pdf
     # MAC decoding order is inverse that is, user with largest weight es decoded last
     for weights in itertools.permutations(w):
