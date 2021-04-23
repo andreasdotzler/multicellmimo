@@ -1,3 +1,353 @@
+
+def done_here():
+    rate_trans_1 = log(
+        det(
+            eye(3)
+            + inv_sqrtm(Omega)
+            @ sqrtm(C)
+            @ H.conj().T
+            @ inv_sqrtm(B)
+            @ Sigma
+            @ inv_sqrtm(B)
+            @ H
+            @ sqrtm(C)
+            @ inv_sqrtm(Omega)
+        )
+    )
+    assert rate_trans_1 == pytest.approx(rate_ref)
+
+    I = eye(Ms_antennas)
+    # TODO need to do this for all Sigmas, rate_trans_1 will help
+    Sigma_eff_BC = -inv(I + Heff_BC@Heff_BC.conj().T) + inv(I)
+    Q = -inv(Omega + H.conj().T @ Sigma @ H) + inv(Omega)
+    Z = np.zeros((Ms_antennas, Ms_antennas))
+    Y_o = np.zeros((Bs_antennas, Bs_antennas))
+    assert np.allclose(sigmaBplusYo, R)
+
+    rate_d = logdet(np.eye(Ms_antennas) + np.linalg.inv(R) @ H @ Q @ H.conj().T)
+    Xi = Omega
+    S = H @ inv(Xi + H.conj().T @ Sigma @ H) @ H.conj().T + M
+    rate_h = log(det(S))
+    assert rate_u == pytest.approx(rate_d, 1e-2)
+    Q_trans_1 = MACtoBCtransformation([H], [Sigma], [0])
+
+    rate_trans_1 = log(
+        det(
+            eye(3)
+            + inv_sqrtm(Omega)
+            @ H.conj().T
+            @ inv_sqrtm(B)
+            @ sqrtm(B)
+            @ Sigma
+            @ sqrtm(B)
+            @ inv_sqrtm(B)
+            @ H
+            @ inv_sqrtm(Omega)
+        )
+    )
+
+    assert rate_trans_1 == pytest.approx(rate_d, 1e-2)
+
+    H_k = inv_sqrtm(B) @ H @ inv_sqrtm(Omega)
+    Sigma_k = sqrtm(B) @ Sigma @ sqrtm(B)
+    Q_trans = MACtoBCtransformation([H_k], [Sigma_k], [0])
+    # the downlink noise here is B
+    rate_trans = log(
+        det(
+            eye(3)
+            + inv_sqrtm(B)
+            @ H
+            @ inv_sqrtm(Omega)
+            @ Q_trans[0]
+            @ inv_sqrtm(Omega)
+            @ H.T
+            @ inv_sqrtm(B)
+        )
+    )
+    assert rate_trans == pytest.approx(rate_d, 1e-2)
+    Q2 = inv_sqrtm(Omega) @ Q_trans[0] @ inv_sqrtm(Omega)
+    assert np.trace(Q) / np.trace(R) == pytest.approx(np.trace(Q2) / np.trace(B))
+    assert np.allclose(Q / np.trace(Q), Q2 / np.trace(Q2))
+
+def test_transfer():
+    # transformation including the uplink noise
+    H_eff_uplink = pinv_sqrtm(Z) @ H @ pinv_sqrtm(Omega_white)
+    Q_trans = MACtoBCtransformation([H_eff_uplink], [pinv_sqrtm(Z) @ Sigma_white @pinv_sqrtm(Z)], [0])[0]
+    rate_downlink_trans = log(det(eye(Ms_antennas) + H_eff_uplink @ Q_trans @ H_eff_uplink.conj().T))
+    assert rate_downlink_trans == pytest.approx(rate_uplink, 1e-2)
+
+
+    Q_trans = inv_sqrtm(Omega_white) @ Q_trans @ inv_sqrtm(Omega_white)
+    rate_downlink_trans_f = log(det(eye(Ms_antennas) + inv(Z) @ H@Q_trans@H.conj().T))
+    assert rate_downlink_trans_f == pytest.approx(rate_uplink, 1e-2)
+    Q_calc = -inv(Omega_white + H.conj().T @ Sigma_white @ H) + inv(Omega_white)
+    Q_calc = Q_calc / np.trace(Q_calc) * P
+    # check the min-max saddle point
+    rate_downlink_worst_case_noise = log(det(eye(Ms_antennas) + inv(Z) @ HQHT))
+    assert rate_downlink_worst_case_noise == pytest.approx(rate_uplink, 1e-2)
+
+    assert rate_downlink == pytest.approx(rate_uplink, 1e-2)
+
+
+
+@pytest.mark.parametrize("comp", [0, 1], ids=["real", "complex"])
+@pytest.mark.parametrize("Ms_antennas", [2])
+@pytest.mark.parametrize("Bs_antennas", [2])
+def test_rest(comp, Ms_antennas, Bs_antennas):
+    H = np.random.random([Ms_antennas, Bs_antennas]) + comp * 1j * np.random.random(
+        [Ms_antennas, Bs_antennas]
+    )
+
+
+
+    P = 100
+    sigma = 10
+    # white uplink transmit  covariance
+    Sigma_white = P / Ms_antennas * eye(Ms_antennas)
+    # white uplink noise covariance
+    Q = -inv(Omega + H.conj().T @ Sigma @ H) + inv(Omega)
+    Z = np.zeros((Ms_antennas, Ms_antennas))
+    Y_o = np.zeros((Bs_antennas, Bs_antennas))
+    assert np.allclose(sigmaBplusYo, R)
+
+    rate_d = logdet(np.eye(Ms_antennas) + np.linalg.inv(R) @ H @ Q @ H.conj().T)
+    Xi = Omega
+    S = H @ inv(Xi + H.conj().T @ Sigma @ H) @ H.conj().T + M
+    rate_h = log(det(S))
+    assert rate_u == pytest.approx(rate_d, 1e-2)
+    Q_trans_1 = MACtoBCtransformation([H], [Sigma], [0])
+
+    rate_trans_1 = log(
+        det(
+            eye(3)
+            + inv_sqrtm(Omega)
+            @ H.conj().T
+            @ inv_sqrtm(B)
+            @ sqrtm(B)
+            @ Sigma
+            @ sqrtm(B)
+            @ inv_sqrtm(B)
+            @ H
+            @ inv_sqrtm(Omega)
+        )
+    )
+
+    assert rate_trans_1 == pytest.approx(rate_d, 1e-2)
+
+    H_k = inv_sqrtm(B) @ H @ inv_sqrtm(Omega)
+    Sigma_k = sqrtm(B) @ Sigma @ sqrtm(B)
+    Q_trans = MACtoBCtransformation([H_k], [Sigma_k], [0])
+    # the downlink noise here is B
+    rate_trans = log(
+        det(
+            eye(3)
+            + inv_sqrtm(B)
+            @ H
+            @ inv_sqrtm(Omega)
+            @ Q_trans[0]
+            @ inv_sqrtm(Omega)
+            @ H.T
+            @ inv_sqrtm(B)
+        )
+    )
+    assert rate_trans == pytest.approx(rate_d, 1e-2)
+    Q2 = inv_sqrtm(Omega) @ Q_trans[0] @ inv_sqrtm(Omega)
+    assert np.trace(Q) / np.trace(R) == pytest.approx(np.trace(Q2) / np.trace(B))
+    assert np.allclose(Q / np.trace(Q), Q2 / np.trace(Q2))
+
+
+@pytest.mark.parametrize("comp", [0, 1], ids=["real", "complex"])
+@pytest.mark.parametrize("Ms_antennas", [2])
+@pytest.mark.parametrize("Bs_antennas", [2])
+def test_transfer_white(comp, Ms_antennas, Bs_antennas):
+    H = np.random.random([Ms_antennas, Bs_antennas]) + comp * 1j * np.random.random(
+        [Ms_antennas, Bs_antennas]
+    )
+    P = 100
+    sigma = 10
+    # white uplink transmit  covariance
+    Sigma_white = P / Ms_antennas * eye(Ms_antennas)
+    # white uplink noise covariance
+    Omega_white = sigma / Bs_antennas * eye(Bs_antennas)
+    rate_uplink = log(det(eye(Bs_antennas) + inv(Omega_white) @ H.conj().T @ Sigma_white @ H))
+
+    # this is just for me to briefly verify the uplink downlink transformation
+    Q_trans_1 = MACtoBCtransformation([H], [Sigma_white], [0])[0]
+    rate_downlink_wo_noise = log(det(eye(Ms_antennas) + H @ Q_trans_1 @ H.conj().T))
+    rate_uplink_wo_noise = log(det(eye(Bs_antennas) + H.conj().T @ Sigma_white @ H))
+    assert rate_downlink_wo_noise == pytest.approx(rate_uplink_wo_noise)
+ 
+    # transformation including the uplink noise
+    H_eff_uplink = H @ inv_sqrtm(Omega_white)
+    Q_trans_w_noise = MACtoBCtransformation([H_eff_uplink], [Sigma_white], [0])[0]
+    rate_downlink_w_noise = log(det(eye(Ms_antennas) + H_eff_uplink @ Q_trans_w_noise @ H_eff_uplink.conj().T))
+    rate_uplink_w_noise = log(det(eye(Bs_antennas) + H_eff_uplink.conj().T @ Sigma_white @ H_eff_uplink))
+    assert rate_downlink_w_noise == pytest.approx(rate_uplink_w_noise)
+
+    HQHT = H @ Q_trans_w_noise @ H.conj().T
+    rate, Z = ptp_worst_case_noise_static(HQHT, sigma / P * np.trace(Q_trans_w_noise))
+    rate_downlink = log(det(eye(Ms_antennas) + inv(Z) @ HQHT))
+    assert rate_downlink == pytest.approx(rate_uplink, 1e-2)
+
+    # transformation including the uplink noise
+    H_eff_uplink_2 = pinv_sqrtm(Z) @ H @ inv_sqrtm(Omega_white)
+    Q_trans = MACtoBCtransformation([H_eff_uplink_2], [sqrtm(Z) @ Sigma_white @ sqrtm(Z)], [0])[0]
+    rate_downlink_trans = log(det(eye(Ms_antennas) + H_eff_uplink_2 @ Q_trans @ H_eff_uplink_2.conj().T))
+    rate_uplink_trans = log(det(eye(Bs_antennas) + H_eff_uplink_2.conj().T @ sqrtm(Z) @ Sigma_white @ sqrtm(Z) @ H_eff_uplink_2))
+    assert rate_downlink_trans == pytest.approx(rate_uplink_trans, 1e-2)
+    assert rate_downlink_trans == pytest.approx(rate_uplink, 1e-2)
+
+    Q_trans = inv_sqrtm(Omega_white) @ Q_trans @ inv_sqrtm(Omega_white)
+    rate_downlink_trans_f = log(det(eye(Ms_antennas) + inv(Z) @ H@Q_trans@H.conj().T))
+    assert rate_downlink_trans_f == pytest.approx(rate_uplink, 1e-2)
+    Q_calc = -inv(Omega_white + H.conj().T @ Sigma_white @ H) + inv(Omega_white)
+    Q_calc = Q_calc / np.trace(Q_calc) * P
+    # check the min-max saddle point
+    rate_downlink_worst_case_noise = log(det(eye(Ms_antennas) + inv(Z) @ HQHT))
+    assert rate_downlink_worst_case_noise == pytest.approx(rate_uplink, 1e-2)
+
+    assert rate_downlink == pytest.approx(rate_uplink, 1e-2)
+@pytest.mark.parametrize("comp", [0, 1], ids=["real", "complex"])
+def test_noise_rank_def(comp):
+    P = 100
+    assert (3, 2) == H.shape
+    Z = np.matrix([[2, 0, 0], [0, 4, 0], [0, 0, 0]])
+    rate_i, Sigma_i = ptp_capacity(H, P, Z)
+    X_i = eye(3) + pinv_sqrtm(Z) @ H @ Sigma_i @ H.conj().T @ pinv_sqrtm(Z)
+    assert log(det(X_i)) == pytest.approx(rate_i, 1e-2)
+    W_i = pinv_sqrtm(Z) @ inv(X_i) @ pinv_sqrtm(Z)
+    assert np.allclose(pinv_sqrtm(Z) @ pinv_sqrtm(Z), pinv(Z))
+
+    H_red = H[[0, 1], :]
+    Z_red = Z[[0, 1], :][:, [0, 1]]
+    rate_r, Sigma_r = ptp_capacity(H_red, P, Z_red)
+    rate_HTZH, Cov = ptp_capacity_HTZH(H_red.conj().T@inv(Z_red)@H_red, P)
+    assert rate_r == pytest.approx(rate_HTZH, 1e-2)
+    assert rate_r == pytest.approx(rate_i, 1e-2)
+
+    rcond=1e-6
+    ei_d, V_d = np.linalg.eigh(H.conj().T @ pinv(Z) @ H)
+    pos = ei_d > rcond
+    HTZH_red = V_d[:, pos] @ np.diag(ei_d[pos]) @ V_d[:, pos].conj().T
+    rate_HTZH_red, Cov = ptp_capacity_HTZH(HTZH_red, P)
+    assert rate_r == pytest.approx(rate_HTZH_red, 1e-2)
+
+    ei_d, V_d = np.linalg.eigh(H @ H.conj().T)
+    inf_cons = []
+    for i, e in enumerate(ei_d):
+        if e > 1e-5:
+            inf_cons.append(V_d[:, [i]] * 1e-5 @ V_d[:, [i]].conj().T)
+
+
+
+KKT
+    Y = B - Sigma
+    Z_o = Omega - C
+    S = R
+
+    Q2 = -inv(Omega + H.conj().T @ Sigma @ H) + inv(Omega)
+    Z = np.zeros((Ms_antennas, Ms_antennas))
+    Y_o = np.zeros((Bs_antennas, Bs_antennas))
+    assert np.allclose(sigmaBplusYo, R)
+    assert np.trace(Q) / np.trace(R) == pytest.approx(np.trace(Sigma) / np.trace(Omega), 1e-2)
+
+    rate_d = logdet(np.eye(Ms_antennas) + np.linalg.inv(R) @ H @ Q @ H.conj().T)
+    Xi = Omega
+    S = H @ inv(Xi + H.conj().T @ Sigma @ H) @ H.conj().T + M
+    rate_h = log(det(S))
+    assert rate_u == pytest.approx(rate_d, 1e-2)
+
+def test_noise_simple():
+    P = 12
+    sigma = 3
+    H = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
+    assert (3, 3) == H.shape
+    rate_no_channel = log(det(eye(3) + P / sigma * H.conj().T @ H))
+    LOGGER.debug(f"Rate w/o channel knowledge {rate_no_channel}")
+    Z = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
+    Sigma = np.array([[4, 0, 0], [0, 4, 0], [0, 0, 4]])
+    rate_known = log(det(eye(3) + inv(Z) @ H @ Sigma @ H.conj().T))
+    assert rate_known == pytest.approx(rate_no_channel)
+    rate_calc = ptp_capacity(H, P, Z)[0]
+    assert rate_known == pytest.approx(rate_calc)
+    rate_worst_case, (Z, W) = ptp_worst_case_noise_approx(H.conj().T, P, sigma)
+    assert rate_worst_case == pytest.approx(rate_no_channel, 1e-2)
+
+    H = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 0]])
+    assert (3, 3) == H.shape
+    rate_no_channel = log(det(eye(3) + P / sigma * H.conj().T @ H))
+    LOGGER.debug(f"Rate w/o channel knowledge {rate_no_channel}")
+    Z = np.array([[1.5, 0, 0], [0, 1.5, 0], [0, 0, 0]])
+    Sigma = np.array([[6, 0, 0], [0, 6, 0], [0, 0, 0]])
+    rate_known = log(det(eye(3) + pinv(Z) @ H @ Sigma @ H.conj().T))
+    assert rate_known == pytest.approx(rate_no_channel)
+    rate_calc = ptp_capacity(H, P, Z)[0]
+    assert rate_known == pytest.approx(rate_calc)
+    rate_worst_case, (Z, W) = ptp_worst_case_noise_approx(H.conj().T, P, sigma)
+    assert rate_worst_case == pytest.approx(rate_no_channel, 1e-2)
+
+
+def test_noise_rank_def2():
+    A = np.random.random([6, 4]) + 1j * np.random.random([6, 4])
+    A = A @ A.conj().T
+    import scipy.linalg
+
+    E, K = scipy.linalg.schur(A)
+    e = np.real(E.diagonal())
+    pos = e > 1e-9
+    T = K[:, pos]
+    np.allclose(np.linalg.pinv(A), T @ np.diag(1 / e[pos]) @ T.conj().T)
+    np.allclose(np.linalg.pinv(A), T @ inv(T.conj().T @ A @ T) @ T.conj().T)
+    Ai = inv(A)
+    print(sorted(np.real(np.linalg.eigvals(Ai))))
+
+
+def worst_case_noise_static(HQHT, sigma, precision=1e-2):
+    Nrx = HQHT.shape[0]
+    if Nrx == 1:
+        Z = np.matrix(sigma)
+        rate = log(det(eye(Nrx) + inv(Z) @ HQHT))
+        return rate, Z 
+    Z = np.eye(Nrx) / Nrx * sigma
+    f_is = []
+    subgradients = []
+    mu = 0
+    ei_d, V_d = np.linalg.eigh(HQHT)
+    inf_co = np.zeros((Nrx, Nrx))
+    inf_cons = []
+    for i, e in enumerate(ei_d):
+        if e > 1e-3:
+            inf_cons.append(V_d[:, [i]] * 1e-3 @ V_d[:, [i]].conj().T)
+    for i in range(1000):
+        W = np.linalg.pinv(Z + HQHT, rcond=1e-6, hermitian=True)
+        rate_i = log(det(eye(Nrx) + np.linalg.pinv(Z, rcond=1e-6, hermitian=True)@HQHT)) 
+        LOGGER.debug(f"Iteration {i} - Value {rate_i} - Approximation {mu}")
+        if np.allclose(rate_i, mu, rtol=precision):
+            break
+        Z_gr = -np.linalg.pinv(Z, rcond=1e-6, hermitian=True) + W
+        f_is.append(rate_i - np.real(np.trace(Z @ Z_gr)))
+        subgradients.append(Z_gr)
+        mu, Z = noise_outer_approximation(f_is, subgradients, sigma, inf_cons)
+    return rate_i, Z
+
+def alternating():
+    O_d = eye(3)/3*sigma
+    for i in range(100):
+        rate_uplink, Sigma = ptp_capacity(H.conj().T, P, O_d)
+        X = eye(3) + inv_sqrtm(O_d) @ H.conj().T @ Sigma @ H @ inv_sqrtm(O_d)
+        #TODO this misses the constraint for O_d >> 0
+        O_d = -eye(3) + inv(X)
+        O_d = O_d / np.trace(O_d) * sigma
+        print(f"iteration {i} rate {rate_uplink}")
+#    if Ntx == 1:
+#        Z = np.matrix(sigma)
+#        n_sqrd = sum(H[:]*H.conj()[:])
+#        rate_i = log(1 + P/sigma*n_sqrd)
+#        W = 1/(Z + P*n_sqrd)
+#        return rate_i, (Z, W)
+
+
+
 def ptp_worst_case_noise_gradient_projected(
     H, P, sigma=1, max_iter_outer=20, max_iter_inner=100000
 ):
