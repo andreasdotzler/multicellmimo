@@ -282,8 +282,7 @@ def test_MACtoBCtransformation(MAC_fun, Ms_antennas_list, Bs_antennas):
             #            + np.random.random([Ms_antennas, Bs_antennas]) * 1j
         )
     MAC_Hs = [H.conj().T for H in Hs]
-    w = list(range(1, len(Ms_antennas_list) + 1))
-    w = [w * 3 for w in w]
+    w = [0,4,10]
     # broadcast, user with larges weight is encoded first https://arxiv.org/pdf/0901.2401.pdf
     # MAC decoding order is inverse that is, user with largest weight es decoded last
     for weights in itertools.permutations(w):
