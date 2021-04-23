@@ -66,26 +66,17 @@ def test_MACtoBCtransformation_simple(order):
 
 
 @pytest.mark.parametrize("Ms_antennas_list, Bs_antennas", [([1, 2, 3], 2)])
-def test_MAC_rate_formulation(Ms_antennas_list, Bs_antennas):
-    Hs = []
+def test_MAC_rate_formulation(Ms_antennas_list, Bs_antennas, H_MAC, C):
+    Hs = H_MAC
     Covs = []
     for Ms_antennas in Ms_antennas_list:
-        Hs.append(
-            np.random.random([Ms_antennas, Bs_antennas])
-            + np.random.random([Ms_antennas, Bs_antennas]) * 1j
-        )
         Co = (
             np.random.random([Ms_antennas, Ms_antennas])
             + np.random.random([Ms_antennas, Ms_antennas]) * 1j
         )
         Covs.append(Co @ Co.conj().T)
     I = np.eye(Bs_antennas)
-    # r1 = logdet(I + Hs[2].conj().T @ Covs[2] @ Hs[2])
-    No = (
-        np.random.random([Ms_antennas, Ms_antennas])
-        + np.random.random([Ms_antennas, Ms_antennas]) * 1j
-    )
-    Noise = 10 * I
+    Noise = C
     # decoding order: user 2, user 1, user 0 is decoded last
 
     HCH0 = Hs[0].conj().T @ Covs[0] @ Hs[0]
