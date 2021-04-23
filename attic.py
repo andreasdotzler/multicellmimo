@@ -1,4 +1,16 @@
 
+def ptp_capacity_correction_cvx(HTRH, C, Q):
+    Nrx, Ntx = HTRH.shape
+    Cov = cp.Variable([Ntx, Ntx], hermitian=True)
+    alpha = cp.Variable(1)
+    I = np.eye(Ntx)
+    cost = cp.log_det(I + Cov @ HTRH)
+    constraints = [Cov << C, Cov == alpha * Q, Cov >> 0]
+    prob = cp.Problem(cp.Maximize(cost), constraints)
+    prob.solve(solver=cp.SCS, eps=1e-9)
+    return prob.value, Cov.value
+
+
 def done_here():
     rate_trans_1 = log(
         det(
