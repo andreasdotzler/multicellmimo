@@ -126,9 +126,9 @@ def argsort(weights, reverse=False):
 
 def sort_channels(Hs, weights):
     order = argsort(weights)
-    Hs = [Hs[k] for k in order]
-    alphas = np.diff([weights[o] for o in order]).tolist()
-    alphas.append(weights[order[0]])
+    Hs = [Hs[k] for k in order[::-1]]
+    weights_reverse = sorted(weights, reverse=True)
+    alphas = [a - b for a, b in zip(weights_reverse, weights_reverse[1:] + [0])]
     return Hs, alphas, order
 
 
@@ -338,7 +338,7 @@ def MAC(Hs, P, weights, rate_threshold=1e-6, max_iterations=30):
             break
 
     MAC_Covs = [None for _ in order]
-    for Cov, o in zip(MAC_Covs_sorted, order):
+    for Cov, o in zip(MAC_Covs_sorted, order[::-1]):
         MAC_Covs[o] = Cov
     rates = MAC_rates(MAC_Covs, Hs, order)
     return rates, MAC_Covs, order
