@@ -31,7 +31,6 @@ def water_filling(ei, P):
     powers_aux = np.zeros(len(channel_gains))
     powers = np.zeros(len(channel_gains))
     while any(powers_aux <= 0):
-        LOGGER.debug(f"Waterfilling: {powers_aux} : nonzero_index {nonzero_index}")
         channel_gains_aux = channel_gains[nonzero_index]
         eta = (P + sum(1 / channel_gains_aux)) / sum(nonzero_index)
         powers_aux = eta - (1 / channel_gains_aux)
