@@ -1,4 +1,23 @@
 
+def test_MACtoBCtransformation_with_noise():
+    Ms_antennas = Bs_antennas = 3
+    H = np.array([[1, 0, 0], [0, 2, 0], [0, 0, 3]])
+    P = 100
+    sigma = 10
+    # white uplink transmit  covariance
+    Sigma_white = P / Ms_antennas * eye(Ms_antennas)
+    # white uplink noise covariance
+    Omega_white = sigma / Bs_antennas * eye(Bs_antennas)
+    rate_uplink = log(det(eye(Bs_antennas) + inv(Omega_white) @ H.conj().T @ Sigma_white @ H))
+    H_eff_uplink = H @ inv_sqrtm(Omega_white)
+    MAC_rates_calc = MAC_rates([Sigma_white], [H_eff_uplink.T], [0])
+    assert MAC_rates_calc[0] == pytest.approx(rate_uplink, 1e-3)
+
+    BC_Cov_trans = MACtoBCtransformation([H_eff_uplink], [Sigma_white], [0])
+    BC_rates_calc = BC_rates(BC_Cov_trans, [H_eff_uplink], [0])
+    assert MAC_rates_calc == pytest.approx(BC_rates_calc, 1e-3)
+    
+
 def ptp_capacity_correction_cvx(HTRH, C, Q):
     Nrx, Ntx = HTRH.shape
     Cov = cp.Variable([Ntx, Ntx], hermitian=True)
