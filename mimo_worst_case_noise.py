@@ -9,7 +9,7 @@ from .mimo import project_covariance_cvx
 from .mimo import project_covariances
 from .mimo import ptp_capacity
 from .mimo import water_filling
-from .utils import pinv_sqrtm, sqrtm
+from .utils import pinv_sqrtm, sqrtm, logdet
 
 
 LOGGER = logging.getLogger(__name__)
@@ -60,7 +60,7 @@ def ptp_capacity_minimax(H, R, C, Zs, eps=1e-3):
     # prob.solve(solver=cp.SCS, warm_start=True, max_iters=1000)
     assert prob.status == "optimal"
     return (
-        log(det(eye(Ntx) + HTSH.value @ Q.value)),
+        logdet(eye(Ntx) + HTSH.value @ Q.value),
         Q.value,
         (c.dual_value for c in constraints),
     )
@@ -80,7 +80,7 @@ def ptp_worst_case_noise_static(HQHT, sigma, precision=1e-2):
             inf_cons.append(V_d[:, [i]] * inf_min @ V_d[:, [i]].conj().T)
     for i in range(1000):
         Z_inv = np.linalg.pinv(Z, rcond=1e-6, hermitian=True)
-        rate_i = np.real(log(det(eye(Nrx) + Z_inv @ HQHT)))
+        rate_i = logdet(eye(Nrx) + Z_inv @ HQHT)
         W = np.linalg.pinv(Z + HQHT, rcond=1e-6, hermitian=True)
         Z_gr = -Z_inv + W
         LOGGER.debug(f"Iteration {i} - Value {rate_i:.5f} - Approximation {mu:.5f}")
