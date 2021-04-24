@@ -17,7 +17,6 @@ from .mimo_worst_case_noise import (
 from .mimo import (
     ptp_capacity,
     ptp_capacity_cvx,
-    ptp_capacity_correction_cvx,
     MACtoBCtransformation,
     water_filling,
 )
@@ -345,7 +344,7 @@ def test_shaping(Ms_antennas, Bs_antennas, B, C, H, comp, P, sigma):
     rate_power, Sigma_u, (R_u, sigmaBplusYo, M) = ptp_capacity_minimax(
         H=H, R=B, C=C, Zs=Zs
     )
-    expected_rate_power, _ = ptp_capacity(H, P, B)
+    expected_rate_power, _ = ptp_capacity(H, np.trace(C), B)
     assert rate_power == pytest.approx(expected_rate_power, 1e-3)
 
 
@@ -420,7 +419,7 @@ def test_noise_rank_def_channel(comp, H):
     P = 100
     sigma = 1
     rate_no_channel = logdet(eye(3) + P / sigma * H @ H.conj().T)
-    rate_worst_case, Z = ptp_worst_case_noise_approx(H.conj().T, P, sigma)
+    rate_worst_case, Z, _ = ptp_worst_case_noise_approx(H.conj().T, P, sigma)
     assert rate_worst_case == pytest.approx(rate_no_channel, 1e-2)
     assert np.linalg.matrix_rank(Z, tol=1e-6, hermitian=True) == 2
     rate_noise, _ = ptp_capacity(H, P, Z)
@@ -435,5 +434,5 @@ def test_noise_rank_def_channel(comp, H):
 def test_ptp_worstcase(H, Ms_antennas, Bs_antennas, P, comp):
     sigma = 3
     rate_no_channel = logdet(eye(Bs_antennas) + P / sigma * H.conj().T @ H)
-    rate_worst_case, Z = ptp_worst_case_noise_approx(H, P, sigma, precision=1e-2)
+    rate_worst_case, Z, Q = ptp_worst_case_noise_approx(H, P, sigma, precision=1e-2)
     assert rate_worst_case == pytest.approx(rate_no_channel, 1e-2)

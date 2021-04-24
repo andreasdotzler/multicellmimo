@@ -28,6 +28,7 @@ def ptp_capacity_minimax(H, R, C, Zs, eps=1e-3):
     for Z in Zs:
         assert (Ntx, Ntx) == Z.shape
     complex = any([np.iscomplex(H).any(), np.iscomplex(R).any(), np.iscomplex(C).any()])
+    # TODO we hardcoded complex here
     complex = True
     zs = cp.Variable(len(Zs), complex=False)
     Z_equal = np.zeros(Nrx)
@@ -134,9 +135,6 @@ def approx_inner(H, Z, P):
     W = np.linalg.pinv(Z + HQHT, rcond=1e-6, hermitian=True)
     Z_gr = -Z_inv + W
     return rate_i, Z_gr, Sigma
-
-
-# Idea, we could compute the worst case noise of a minimax optimization, it is the dual variable
 
 
 def noise_outer_approximation(f_is, subgradients, sigma, inf_cons=[]):
