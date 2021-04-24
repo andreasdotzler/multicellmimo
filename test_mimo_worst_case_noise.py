@@ -42,7 +42,7 @@ eye = np.eye
 @pytest.mark.parametrize("Bs_antennas", [3])
 @pytest.mark.parametrize("sigma", [1.2])
 @pytest.mark.parametrize("P", [1.3])
-def test_minimax_fixed_fixed(Ms_antennas, Bs_antennas, B, C, H, P, sigma):
+def test_minimax_fixed_fixed(Ms_antennas, Bs_antennas, B, C, H, P, sigma, comp):
     # Lemma 3
     p = c = np.trace(C @ C)
     n = b = np.trace(B @ B)
@@ -228,7 +228,7 @@ def test_minimax_fixed_fixed(Ms_antennas, Bs_antennas, B, C, H, P, sigma):
 @pytest.mark.parametrize("Bs_antennas", [3])
 @pytest.mark.parametrize("sigma", [1.2])
 @pytest.mark.parametrize("P", [1.3])
-def test_minimax_opt_opt(Ms_antennas, Bs_antennas, B, C, H, P, sigma):
+def test_minimax_opt_opt(Ms_antennas, Bs_antennas, B, C, H, P, sigma, comp):
     # Lemma 3
     p = c = np.trace(C @ C)
     n = b = np.trace(B @ B)
@@ -277,7 +277,7 @@ def test_minimax_opt_opt(Ms_antennas, Bs_antennas, B, C, H, P, sigma):
 @pytest.mark.parametrize("Bs_antennas", [3])
 @pytest.mark.parametrize("sigma", [1.2])
 @pytest.mark.parametrize("P", [1.3])
-def test_minimax_fixed_opt(Ms_antennas, Bs_antennas, B, C, H, P, sigma):
+def test_minimax_fixed_opt(Ms_antennas, Bs_antennas, B, C, H, P, sigma, comp):
     p = c = np.trace(C @ C)
     n = b = np.trace(B @ B)
     # Downlink fixed noise, downlink optim covariance, uplink fixed noise, optim covariance
@@ -300,7 +300,7 @@ def test_minimax_fixed_opt(Ms_antennas, Bs_antennas, B, C, H, P, sigma):
 @pytest.mark.parametrize("Bs_antennas", [3])
 @pytest.mark.parametrize("sigma", [1.2])
 @pytest.mark.parametrize("P", [1.3])
-def test_minimax_opt_fixed(Ms_antennas, Bs_antennas, B, C, H, P, sigma):
+def test_minimax_opt_fixed(Ms_antennas, Bs_antennas, B, C, H, P, sigma, comp):
     p = c = np.trace(C @ C)
     n = b = np.trace(B @ B)
     # Downlink optim noise, downlink fixed covariance, uplink optim noise, fixed covariance
@@ -432,7 +432,7 @@ def test_noise_rank_def_channel(comp, H):
 @pytest.mark.parametrize("Ms_antennas", [1, 2, 3])
 @pytest.mark.parametrize("Bs_antennas", [1, 2, 3])
 @pytest.mark.parametrize("P", [3, 100])
-def test_ptp_worstcase(H, Ms_antennas, Bs_antennas, P):
+def test_ptp_worstcase(H, Ms_antennas, Bs_antennas, P, comp):
     sigma = 3
     rate_no_channel = logdet(eye(Bs_antennas) + P / sigma * H.conj().T @ H)
     rate_worst_case, Z = ptp_worst_case_noise_approx(H, P, sigma, precision=1e-2)
