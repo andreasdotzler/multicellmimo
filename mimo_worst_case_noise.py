@@ -93,22 +93,45 @@ def ptp_worst_case_noise_static(HQHT, sigma, precision=1e-2):
     return rate_i, Z
 
 
+def inf_cons(H, P, Omega_p):
+    """Find constraints on the worst-case uplink noise for a user
+
+    Keyword arguments:
+    H -- channel matrix
+    P -- transmit power
+    Omega -- a feasible uplink noise covariance
+
+    Given a feasible uplink covariance we compute a set of matrices Is
+    such that U = V
+
+    U = min_Omega max_Sigma logdet(I + inv(Omega) @ H.conj().T @ Sigma @ H): tr(Sigma) < P : Omega in Omegas, Omega >= Is forall I in Is 
+    V = min_Omega max_Sigma logdet(I + inv(Omega) @ H.conj().T @ Sigma @ H): tr(Sigma) < P : Omega in Omegas 
+    r = max_Sigma logdet(I + inv(Omega_p) @ H.conj().T @ Sigma @ H): tr(Sigma) < P
+
+    we know u <= r
+
+    We select the constrainst, such that the noise power in each mode of the channel is large enough that if we put all transmit power into that mode, the resulting rate is r. This guarantees a finite worst case rates when solving U instead of V. 
+    """
+    infcond = 1e-4
+    ei_d, V_d = np.linalg.eigh(H.conj().T @ H)
+    rate, _ = ptp_capacity(H.conj().T, P, Omega_p)
+    Is = []
+    for i, e in enumerate(ei_d):
+        if e > infcond:
+            inf_min = e * P / (math.exp(rate) - 1)
+            Is.append(V_d[:, [i]] * inf_min @ V_d[:, [i]].conj().T)
+    return Is
+
+
 def ptp_worst_case_noise_approx(
     H, P, sigma=1, precision=1e-2, rcond=1e-6, infcond=1e-4
 ):
     Nrx, Ntx = H.shape
-
-    Z = np.eye(Ntx) / Ntx * sigma
     f_is = []
     subgradients = []
     mu = 0
-    ei_d, V_d = np.linalg.eigh(H.conj().T @ H)
-    rrr, _ = ptp_capacity(H.conj().T, P, Z)
-    inf_cons = []
-    for i, e in enumerate(ei_d):
-        if e > infcond:
-            inf_min = e * P / (math.exp(rrr) - 1)
-            inf_cons.append(V_d[:, [i]] * inf_min @ V_d[:, [i]].conj().T)
+    Z = np.eye(Ntx) / Ntx * sigma
+    Is = inf_cons(H, P, Z)
     for i in range(1000):
         rate_i, Z_gr, Q = approx_inner(H, Z, P)
         LOGGER.debug(f"Iteration {i} - Value {rate_i:.5f} - Approximation {mu:.5f}")
@@ -116,7 +139,7 @@ def ptp_worst_case_noise_approx(
             break
         f_is.append(rate_i - np.real(np.trace(Z @ Z_gr)))
         subgradients.append(Z_gr)
-        mu, Z = noise_outer_approximation(f_is, subgradients, sigma, inf_cons)
+        mu, Z = noise_outer_approximation(f_is, subgradients, sigma, Is)
     return rate_i, Z, Q
 
 
