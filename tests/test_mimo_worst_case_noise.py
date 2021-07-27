@@ -7,21 +7,27 @@ import cvxpy as cp
 import numpy as np
 import pytest
 
-from .mimo_worst_case_noise import (
+from .context import mcm
+
+from mcm.mimo_worst_case_noise import (
     ptp_worst_case_noise_approx,
+    MAC_worst_case_noise_approx,
     ptp_worst_case_noise_static,
     ptp_capacity_minimax,
     noise_outer_approximation,
+    approx_inner_MAC,
+    inf_cons,
 )
 
-from .mimo import (
+from mcm.mimo import (
     ptp_capacity,
     ptp_capacity_cvx,
     MACtoBCtransformation,
     water_filling,
+    MAC_cvx_with_noise_sbgr,
 )
 
-from .utils import (
+from mcm.utils import (
     inv_sqrtm,
     pinv_sqrtm,
     sqrtm,

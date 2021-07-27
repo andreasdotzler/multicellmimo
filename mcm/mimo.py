@@ -1,10 +1,11 @@
 import logging
 import math
+import pytest
 
 import cvxpy as cp
 import numpy as np
 
-from .utils import inv_sqrtm, sqrtm, logdet, inv, det, log, eye, pinv
+from .utils import pinv_sqrtm, inv_sqrtm, sqrtm, logdet, inv, det, log, eye, pinv
 
 LOGGER = logging.getLogger(__name__)
 

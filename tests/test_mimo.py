@@ -6,24 +6,27 @@ import itertools
 import numpy as np
 import pytest
 
-from .mimo import (
-    MAC,
-    BC_rates,
-    MAC_cvx,
-    MAC_rates,
-    MAC_rates_ordered,
-    MACtoBCtransformation,
-    project_covariance_cvx,
-    project_covariances,
-    project_eigenvalues_to_given_sum_cvx,
-    project_eigenvalues_to_given_sum,
-    ptp_capacity,
-    ptp_capacity_cvx,
-    water_filling_cvx,
-    water_filling,
+from .context import mcm
+
+from mcm.mimo import (
+     MAC,
+     BC_rates,
+     MAC_cvx,
+     MAC_rates,
+     MAC_rates_ordered,
+     MACtoBCtransformation,
+     project_covariance_cvx,
+     project_covariances,
+     project_eigenvalues_to_given_sum_cvx,
+     project_eigenvalues_to_given_sum,
+     ptp_capacity,
+     ptp_capacity_cvx,
+     water_filling_cvx,
+     water_filling,
 )
 
-from .utils import inv_sqrtm, sqrtm, logdet, inv, det, log, eye
+from mcm.utils import inv_sqrtm, sqrtm, logdet, inv, det, log, eye
+
 
 LOGGER = logging.getLogger(__name__)
 

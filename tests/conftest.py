@@ -3,8 +3,8 @@ import numpy as np
 import random
 import logging
 
-from .utils import eye
-
+from .context import mcm
+from mcm.utils import eye
 LOGGER = logging.getLogger(__name__)
 
 
