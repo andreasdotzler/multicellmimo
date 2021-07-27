@@ -256,11 +256,11 @@ def test_MACwithUplinkNoise(MAC_fun, H_MAC, Ms_antennas_list, Bs_antennas, C, co
     weights = [4, 3, 2]
     MAC_Hs = [H.conj().T for H in H_MAC]
     mac_rates_w_noise, MAC_Covs, order = MAC_fun(MAC_Hs, P, weights, Omega=C)
-    MAC_Hs = [inv_sqrtm(C) @ H.conj().T for H in H_MAC]
-    mac_rates_eff, MAC_Covs_eff, order = MAC_fun(MAC_Hs, P, weights)
+    MAC_Hs_eff = [inv_sqrtm(C) @ H.conj().T for H in H_MAC]
+    mac_rates_eff, MAC_Covs_eff, order = MAC_fun(MAC_Hs_eff, P, weights)
     wsr_w_noise = sum([w * r for w, r in zip(weights, mac_rates_w_noise)])
     wsr_eff = sum([w * r for w, r in zip(weights, mac_rates_eff)])
-    assert wsr_w_noise == pytest.approx(wsr_eff, 1e-1)
+    assert wsr_w_noise == pytest.approx(wsr_eff, 1e-1):
 
 
 @pytest.mark.parametrize("MAC_fun", [MAC, MAC_cvx])

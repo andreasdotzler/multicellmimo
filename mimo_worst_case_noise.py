@@ -9,6 +9,7 @@ from .mimo import project_covariance_cvx
 from .mimo import project_covariances
 from .mimo import ptp_capacity
 from .mimo import water_filling
+from .mimo import MAC_cvx_with_noise_sbgr
 from .utils import pinv_sqrtm, sqrtm, logdet
 
 
@@ -74,11 +75,11 @@ def ptp_worst_case_noise_static(HQHT, sigma, precision=1e-2):
     subgradients = []
     mu = 0
     ei_d, V_d = np.linalg.eigh(HQHT)
-    inf_cons = []
+    inf_constraints = []
     for i, e in enumerate(ei_d):
         if e > 1e-3:
             inf_min = 1e-3
-            inf_cons.append(V_d[:, [i]] * inf_min @ V_d[:, [i]].conj().T)
+            inf_constraints.append(V_d[:, [i]] * inf_min @ V_d[:, [i]].conj().T)
     for i in range(1000):
         Z_inv = np.linalg.pinv(Z, rcond=1e-6, hermitian=True)
         rate_i = logdet(eye(Nrx) + Z_inv @ HQHT)
@@ -89,11 +90,11 @@ def ptp_worst_case_noise_static(HQHT, sigma, precision=1e-2):
             break
         f_is.append(rate_i - np.real(np.trace(Z @ Z_gr)))
         subgradients.append(Z_gr)
-        mu, Z = noise_outer_approximation(f_is, subgradients, sigma, inf_cons)
+        mu, Z = noise_outer_approximation(f_is, subgradients, sigma, inf_constraints, mini=0)
     return rate_i, Z
 
 
-def inf_cons(H, P, Omega_p):
+def inf_cons(H, P, rate):
     """Find constraints on the worst-case uplink noise for a user
 
     Keyword arguments:
@@ -114,12 +115,13 @@ def inf_cons(H, P, Omega_p):
     """
     infcond = 1e-4
     ei_d, V_d = np.linalg.eigh(H.conj().T @ H)
-    rate, _ = ptp_capacity(H.conj().T, P, Omega_p)
+    # TODO add weights and make ptp_capacity optional if no rate is supplied
     Is = []
     for i, e in enumerate(ei_d):
-        if e > infcond:
+        if e > infcond and rate > 0:
             inf_min = e * P / (math.exp(rate) - 1)
-            Is.append(V_d[:, [i]] * inf_min @ V_d[:, [i]].conj().T)
+            if inf_min > infcond:
+                Is.append(V_d[:, [i]] * inf_min @ V_d[:, [i]].conj().T)
     return Is
 
 
@@ -131,9 +133,10 @@ def ptp_worst_case_noise_approx(
     subgradients = []
     mu = 0
     Z = np.eye(Ntx) / Ntx * sigma
-    Is = inf_cons(H, P, Z)
+    rate, _ = ptp_capacity(H.conj().T, P, Z)
+    Is = inf_cons(H, P, rate)
     for i in range(1000):
-        rate_i, Z_gr, Q = approx_inner(H, Z, P)
+        rate_i, Z_gr, Q = approx_inner_ptp(H, Z, P)
         LOGGER.debug(f"Iteration {i} - Value {rate_i:.5f} - Approximation {mu:.5f}")
         if np.allclose(rate_i, mu, rtol=precision):
             break
@@ -143,7 +146,38 @@ def ptp_worst_case_noise_approx(
     return rate_i, Z, Q
 
 
-def approx_inner(H, Z, P):
+def MAC_worst_case_noise_approx(
+    Hs, P, sigma=1, weights=None, precision=1e-2, rcond=1e-6, infcond=1e-4
+):
+    weights = weights or [1 for _ in Hs]
+    _, Bs_antennas = Hs[0].shape
+    Hs_MAC = [H.conj().T for H in Hs]
+    f_is = []
+    subgradients = []
+    mu = 0
+    Omega = np.eye(Bs_antennas) / Bs_antennas * sigma
+    # TODO do a wsr once, than bounds for every user with weight and wsr_as target
+    rates, _, _, _ = approx_inner_MAC(Hs_MAC, Omega, P, weights)
+    wsr = sum([w*r for w,r in zip(weights, rates)])
+    Is = []
+    for w, H in zip(weights, Hs):
+        if w > 0:
+            Is += inf_cons(H, P, wsr/w)
+    #Is = []
+    for i in range(1000):
+        rates_i, Omega_gr, Covs, order = approx_inner_MAC(Hs_MAC, Omega, P, weights)
+        wsr_i = sum([w*r for w,r in zip(weights, rates_i)])
+        LOGGER.debug(f"Iteration {i} - Value {wsr_i:.5f} - Approximation {mu:.5f}")
+        if np.allclose(wsr_i, mu, rtol=precision):
+            break
+        assert wsr_i > mu
+        f_is.append(wsr_i - np.real(np.trace(Omega @ Omega_gr)))
+        subgradients.append(Omega_gr)
+        mu, Omega = noise_outer_approximation(f_is, subgradients, sigma, Is)
+    return rates_i, Omega, Covs, order
+
+
+def approx_inner_ptp(H, Z, P):
     ei_z, V_z = np.linalg.eigh(Z)
     above_cutoff = ei_z > 1e-6
     psigma_diag = 1.0 / ei_z[above_cutoff]
@@ -160,7 +194,17 @@ def approx_inner(H, Z, P):
     return rate_i, Z_gr, Sigma
 
 
-def noise_outer_approximation(f_is, subgradients, sigma, inf_cons=[]):
+def approx_inner_MAC(Hs, Omega, P, weights):
+    #rates, MAC_Covs, order, eye_sbgr = MAC_cvx_with_noise_sbgr([pinv_sqrtm(Omega)@H for H in Hs], P, weights, Omega=np.eye(Omega.shape[0]))
+    #Omega_sbgr = pinv_sqrtm(Omega)@eye_sbgr@pinv_sqrtm(Omega)
+    rates, MAC_Covs, order, Omega_sbgr = MAC_cvx_with_noise_sbgr(Hs, P, weights, Omega=Omega)
+    # TODO compare the gradient to ptp
+
+    #Omega_sbgr = pinv_sqrtm(Omega)@eye_sbgr@pinv_sqrtm(Omega)
+    return rates, Omega_sbgr, MAC_Covs, order
+
+
+def noise_outer_approximation(f_is, subgradients, sigma, inf_constraints=[], mini=0):
     Ntx, _ = subgradients[0].shape
     Ss = [cp.Parameter(shape=s.shape, hermitian=True) for s in subgradients]
     for c, S in zip(Ss, subgradients):
@@ -172,12 +216,12 @@ def noise_outer_approximation(f_is, subgradients, sigma, inf_cons=[]):
     power = cp.real(cp.trace(Z)) == cp.Parameter(value=sigma, complex=False)
     f_is_const = [cp.Parameter(value=np.real(f_i), complex=False) for f_i in f_is]
     cons = [mu >= np.real(f_i) + cp.real(cp.trace(S @ Z)) for S, f_i in zip(Ss, f_is)]
-    Is = [cp.Parameter(shape=inf.shape, hermitian=True) for inf in inf_cons]
-    for c, I in zip(Is, inf_cons):
+    Is = [cp.Parameter(shape=inf.shape, hermitian=True) for inf in inf_constraints]
+    for c, I in zip(Is, inf_constraints):
         c.value = c.project(I)
     inf_constraints = [Z >> I for I in Is]
     # inf_constraints = [cp.real(cp.quad_form(I,Z)) >= 1e-5 for I in inf_cons]
-    constraints = cons + positivity + [power] + inf_constraints
+    constraints = cons + positivity + [power] + inf_constraints + [mu >= mini]
     prob = cp.Problem(cp.Minimize(cost), constraints)
     prob.solve(
         solver=cp.CVXOPT,

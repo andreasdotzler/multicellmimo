@@ -268,7 +268,7 @@ def test_minimax_opt_opt(Ms_antennas, Bs_antennas, B, C, H, P, sigma, comp):
     assert rate_downlink_trans == pytest.approx(rate_uplink_trans, 1e-2)
     assert rate_downlink_trans == pytest.approx(r_d_o_o, 1e-2)
     Q2 = inv_sqrtm(C) @ Q_trans @ inv_sqrtm(C)
-    assert np.allclose(Q, Q2, rtol=1e-02, atol=1e-01)
+    assert np.allclose(Q, Q2, rtol=1e-02, atol=1)
 
 
 @pytest.mark.parametrize("comp", [0, 1], ids=["real", "complex"])
@@ -436,3 +436,150 @@ def test_ptp_worstcase(H, Ms_antennas, Bs_antennas, P, comp):
     rate_no_channel = logdet(eye(Bs_antennas) + P / sigma * H.conj().T @ H)
     rate_worst_case, Z, Q = ptp_worst_case_noise_approx(H, P, sigma, precision=1e-2)
     assert rate_worst_case == pytest.approx(rate_no_channel, 1e-2)
+
+
+def test_MAC_worst_case_simple():
+    P = 10
+    sigma = 3
+    Bs_antennas = 2
+    Ms_antennas = 1
+    H_1 = np.matrix([[1, 0]])
+    H_2 = np.matrix([[0, 1]])
+    H = np.concatenate((H_1,H_2), axis=0)
+    rate_no_channel = logdet(eye(Bs_antennas) + P / sigma * H.conj().T @ H)
+    rate_worst_case, Z, Q = ptp_worst_case_noise_approx(H, P, sigma, precision=1e-2)
+    rate_MAC_joint, Omega_joint, Covs_joint, order_joint = MAC_worst_case_noise_approx([H], P, sigma, precision=1e-2)
+    Sigma = Covs_joint[0]
+    R = H @ pinv(Omega_joint + H.conj().T @ Sigma @ H) @ H.conj().T
+    Q = -pinv(Omega_joint + H.conj().T @ Sigma @ H) + pinv(Omega_joint)
+    rate = logdet(eye(2*Ms_antennas) + inv(R) @ H @ Q @ H.conj().T)
+    assert rate_MAC_joint[0] == pytest.approx(rate_no_channel, 1e-2)
+    assert rate == pytest.approx(rate_no_channel, 1e-2)
+    
+
+    rate_MAC, Omega, Covs, order = MAC_worst_case_noise_approx([H_1, H_2], P, sigma, precision=1e-2)
+    Omega_equal = eye(Bs_antennas)*sigma/Bs_antennas
+    rates_check, MAC_Covs, order, Omega_sbgr = MAC_cvx_with_noise_sbgr([H_1.conj().T, H_2.conj().T], P, [1,1], Omega=Omega_equal)
+    Sigma_w1 = MAC_Covs[0]
+    Sigma_w2 = MAC_Covs[1]
+    A1 = H_1.conj().T @ Sigma_w1 @ H_1
+    A2 = H_2.conj().T @ Sigma_w2 @ H_2
+
+    r_1 = logdet(Omega_equal + A1) - logdet(Omega_equal)
+    r_2 = logdet(Omega_equal + A1 + A2) - logdet(Omega_equal + A1) 
+    assert rate_MAC == pytest.approx(rates_check, rel=1e-2, abs=1e-3)
+    Sigma_1 = Covs[0]
+    Sigma_2 = Covs[1]
+    R_1 = H_1 @ pinv(Omega + H_1.conj().T @ Sigma_1 @ H_1) @ H_1.conj().T
+    R_2 = H_2 @ pinv(Omega + H_2.conj().T @ Sigma_2 @ H_2) @ H_2.conj().T
+    Q_1 = -pinv(Omega + H_1.conj().T @ Sigma_1 @ H_1) + pinv(Omega)
+    Q_2 = -pinv(Omega + H_2.conj().T @ Sigma_2 @ H_2) + pinv(Omega)
+    r_1 = logdet(eye(Ms_antennas) + inv(R_1) @ H_1 @ Q_1 @ H_1.conj().T)
+    r_2 = logdet(eye(Ms_antennas) + inv(R_2) @ H_2 @ Q_2 @ H_2.conj().T)
+    assert rate_MAC == pytest.approx([r_1, r_2], rel=1e-2, abs=1e-3)
+
+    rate_p2p1, Omega_p2p1, Cov_ptp1 = ptp_worst_case_noise_approx(H_1, P, sigma)
+    rate_w1, Omega_w1, Covs_w1, order_w1 = MAC_worst_case_noise_approx([H_1, H_2], P, sigma, weights=[10,0], precision=1e-2)
+    assert rate_w1 == pytest.approx([r_1, 0], rel=1e-2, abs=1e-3)
+    rate_p2p2, Omega_p2p2, Cov_ptp2 = ptp_worst_case_noise_approx(H_2, P, sigma)
+    rate_w2, Omega_2, Covs_2, order_w2 = MAC_worst_case_noise_approx([H_1, H_2], P, sigma, weights=[0,1], precision=1e-2)
+    assert rate_w2 == pytest.approx([0, r_2], rel=1e-2, abs=1e-3)
+
+def logpdet(A, t=1e-6):
+    a = np.real(np.linalg.eigvalsh(A))
+    return log(np.product(a[a>t]))
+
+
+@pytest.mark.parametrize("Ms_antennas_list", [[2, 2]])
+@pytest.mark.parametrize("Bs_antennas", [2])
+def test_worst_case_MIMO_2user(Ms_antennas_list, Bs_antennas, H_MAC, C):
+    [H_1, H_2] = H_MAC
+    P = 2
+    sigma = 2
+    weights = [0.6, 0.4]
+    rates, Omega, Covs, order = MAC_worst_case_noise_approx(H_MAC, P, sigma, weights=weights, precision=1e-4)
+    [Sigma_1, Sigma_2] = Covs
+    Xi_1 = Omega 
+    Xi_2 = Omega + H_1.conj().T @ Sigma_1 @ H_1
+    [w_1, w_2] = weights
+    S_1 = w_1 * H_1 @ pinv(Xi_1 + H_1.conj().T @ Sigma_1 @ H_1) @ H_1.conj().T
+    S_2 = w_2 * H_2 @ pinv(Xi_2 + H_2.conj().T @ Sigma_2 @ H_2) @ H_2.conj().T
+    Q_1 = w_1 * -pinv(Xi_1 + H_1.conj().T @ Sigma_1 @ H_1) + w_1 * pinv(Xi_1)
+    Q_2 = w_2 * -pinv(Xi_2 + H_2.conj().T @ Sigma_2 @ H_2) + w_2 * pinv(Xi_2)
+
+    r_1d = logdet(eye(2) + inv(S_1) @ H_1 @ Q_1 @ H_1.conj().T)
+    r_2d = logdet(eye(2) + inv(S_2) @ H_2 @ Q_2 @ H_2.conj().T)
+    # if we set MS_antenns to 1 we need
+    #r_1d = logdet(eye(2) + inv(2*S_1) @ H_1 @ Q_1 @ H_1.conj().T)
+    #r_2d = logdet(eye(2) + inv(2*S_2) @ H_2 @ Q_2 @ H_2.conj().T)
+    # TODO, we need to make the scaling automatic tr(BB)=tr(CC) 
+    # TODO Q_1 and Q_2 are not really white, downlink transformation is not precice
+    assert rates == pytest.approx([r_1d, r_2d], rel=1e-2, abs=1e-3)
+    assert S_1 == pytest.approx(S_2 + H_1@Q_2@H_1.conj().T, rel=1e-2, abs=1e-3)
+
+
+@pytest.mark.parametrize("Ms_antennas_list", [[1, 2, 3], [2, 2, 2]])
+@pytest.mark.parametrize("Bs_antennas", [1, 2, 3])
+def test_MAC_worst_case_noise(Ms_antennas_list, Bs_antennas, H_MAC, C):
+    weights = [random.random() for _ in Ms_antennas_list]
+    P = 2
+    sigma = 2
+    
+    rates_MAC, Omega, Covs, order = MAC_worst_case_noise_approx(H_MAC, P, sigma, weights=weights, precision=1e-2)
+    # transform to broadcast
+    Xi = Omega
+    rates_BC = [None for _ in Ms_antennas_list]
+
+    for o in order[::-1]:
+        Sigma = Covs[o]
+        H = H_MAC[o]
+        w = weights[o]
+        I = eye(Ms_antennas_list[o])
+        Xi_n = Xi + H.conj().T @ Sigma @ H
+        S = w * H @ pinv(Xi_n) @ H.conj().T
+        Q = w * -pinv(Xi_n) + w * pinv(Xi)
+        Xi = Xi_n    
+        rates_BC[o] = logdet(I + inv(S) @ H @ Q @ H.T)
+    
+    assert rates_MAC == pytest.approx(rates_BC, rel=1e-2, abs=1e-3)
+
+
+@pytest.mark.parametrize("Ms_antennas_list", [[1, 2, 3], [2, 2, 2]])
+@pytest.mark.parametrize("Bs_antennas", [1, 2, 3])
+def test_infcons(Ms_antennas_list, Bs_antennas, H_MAC, C):
+    # We pick a random wsr-value than bounds for every user with weight
+    # such that even if all transmit power goes to this user
+    # TODO matrix I is sigular, so max_Sigma { logdet(I + pinv(I) @ H.conj().T @ Sigma @ H : tr(Sigma) <= P)
+    # TODO cross check with documentation of infcons
+    P = 10
+    wsr = random.random()*1
+    weights = [random.random() for _ in Ms_antennas_list]
+    Is = []
+    for w, H in zip(weights, H_MAC):
+        Is = inf_cons(H, P, wsr/w)
+        for N_i in Is:
+            r_comp, Sigma_prime = ptp_capacity(H.conj().T, P, N_i)
+            assert wsr == pytest.approx(w*r_comp, 1e-2)
+
+
+@pytest.mark.parametrize("Ms_antennas_list, Bs_antennas", [([1, 2, 3], 2)])
+def test_MAC_rank_def_noise(Ms_antennas_list, Bs_antennas, H_MAC, C):
+    P = 10
+    sigma = 3
+    H_1 = H_MAC[0]
+    H_2 = H_MAC[1]
+    Omega_w = np.matrix([[sigma, 0], [0, 0]])
+    Omega_w = C
+    Sigma_w1 = np.matrix([[P]]) 
+    Sigma_w2 = C
+    A1 = H_1.conj().T @ Sigma_w1 @ H_1
+    A2 = H_2.conj().T @ Sigma_w2 @ H_2
+
+    r_1 = logdet(Omega_w + A1) - logdet(Omega_w)
+    r_2 = logdet(Omega_w + A1 + A2) - logdet(Omega_w + A1) 
+    r_1 = logpdet(Omega_w + A1) - logpdet(Omega_w)
+    r_2 = logpdet(Omega_w + A1 + A2) - logpdet(Omega_w + A1)
+    r_w1_u = logdet(eye(Bs_antennas) + pinv(Omega_w) @ A1)
+    r_w2_u = logdet(eye(Bs_antennas) + pinv(Omega_w + A1) @ A2)
+    assert [r_w1_u, r_w2_u] == pytest.approx([r_1, r_2], 1e-2)
+     

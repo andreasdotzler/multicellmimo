@@ -133,18 +133,34 @@ def sort_channels(Hs, weights):
 
 
 def MAC_cvx(Hs, P, weights, Omega=None):
+    rates, MAC_Covs, order, _ = MAC_cvx_with_noise_sbgr(Hs, P, weights, Omega)
+    return rates, MAC_Covs, order
+
+
+def MAC_cvx_with_noise_sbgr(Hs, P, weights, Omega=None):
+    #TODO, this function does not handle a rank deficient noise very well
     MAC_Covs = []
     Xs = []
     Hs_sorted, alphas, order = sort_channels(Hs, weights)
+    Hs_sorted_orig = Hs_sorted
+    Nrx = Hs[0].shape[0]
+    Omega = np.eye(Nrx) if Omega is None else Omega
+    ei_O, V_O = np.linalg.eigh(Omega)
+    above_cutoff = ei_O > 1e-3
+    psigma_diag = ei_O[above_cutoff] ** -0.5
+    V_u = V_O[:, above_cutoff]
 
+    Hs_sorted_pinv = [(psigma_diag * V_u).conj().T @ H for H in Hs_sorted]
+    Nrx_eff = len(psigma_diag)
     for H in Hs_sorted:
         Nrx, Ntx = H.shape
         MAC_Covs.append(cp.Variable([Ntx, Ntx], hermitian=True))
-        Xs.append(cp.Variable([Nrx, Nrx], hermitian=True))
+        Xs.append(cp.Variable([Nrx_eff, Nrx_eff], hermitian=True))
     cost = cp.sum([alpha * cp.log_det(X) for X, alpha in zip(Xs, alphas)])
     mat = []
-    matrix_equal = np.eye(Nrx) if Omega is None else Omega
-    for X, MAC_Cov, H in zip(Xs, MAC_Covs, Hs_sorted):
+    matrix_equal = np.eye(Nrx_eff)
+    for X, MAC_Cov, H in zip(Xs, MAC_Covs, Hs_sorted_pinv):
+        #H_e = (psigma_diag * V_u).conj().T @ H
         matrix_equal += H @ MAC_Cov @ H.conj().T
         mat.append(X << matrix_equal)
     power = cp.sum([cp.real(cp.trace(MAC_Cov)) for MAC_Cov in MAC_Covs]) <= P
@@ -153,36 +169,58 @@ def MAC_cvx(Hs, P, weights, Omega=None):
     constraints = mat + [power] + positivity
     prob = cp.Problem(cp.Maximize(cost), constraints)
     prob.solve(solver=cp.SCS, eps=1e-12)
+    assert 'optimal' in prob.status
     MAC_Covs_sorted = [Cov.value for Cov in MAC_Covs]
     MAC_Covs = [None for _ in order]
     for Cov, o in zip(MAC_Covs_sorted, order[::-1]):
         MAC_Covs[o] = Cov
-    rates = MAC_rates(MAC_Covs, Hs, order, Omega)
-    return rates, MAC_Covs, order
+    rates_sorted, _ = MAC_rates_ordered(MAC_Covs_sorted, Hs_sorted_pinv)
+    rates = [None for _ in order]
+    for r, o in zip(rates_sorted, order[::-1]):
+        rates[o] = r
+    wsr = sum([w*r for w, r in zip(weights, rates)])
+    if not wsr == pytest.approx(prob.value, 1e-1):
+        rates = MAC_rates(MAC_Covs, Hs, order)
+    Omega_sbgr = -max(weights) * pinv(Omega)
+    Zs = Omega
+    # alphas[1] * logdet(Xs[1].value) - alphas[0] * logdet(Xs[0].value) - min(weights) * logdet(Omega)
+    for a, MAC_Cov, H in zip(alphas, MAC_Covs_sorted, Hs_sorted_orig):
+        Zs = Zs + H @ MAC_Cov @ H.conj().T
+        Omega_sbgr = Omega_sbgr + a * pinv(Zs)
+    return rates, MAC_Covs, order, Omega_sbgr
 
 
-def MAC_rates(MAC_Covs, Hs, MAC_decoding_order, Omega=None):
+def MAC_rates(MAC_Covs, Hs, MAC_decoding_order, Omega = None):
+    return MAC_rates_withZs(MAC_Covs, Hs, MAC_decoding_order, Omega)[0]
+
+def MAC_rates_withZs(MAC_Covs, Hs, MAC_decoding_order, Omega = None):
     order = list(reversed(MAC_decoding_order))
     Hs_sorted = [Hs[k] for k in order]
     MAC_Covs_sorted = [MAC_Covs[k] for k in order]
-    rates_sorted = MAC_rates_ordered(MAC_Covs_sorted, Hs_sorted, Omega)[0]
+    rates_sorted, Zs = MAC_rates_ordered(MAC_Covs_sorted, Hs_sorted, Omega)
     rates = [None for _ in order]
     for r, o in zip(rates_sorted, order):
         rates[o] = r
-    return rates
+    return rates, Zs
 
 
-def MAC_rates_ordered(MAC_Covs, Hs, Omega=None):
+def MAC_rates_ordered(MAC_Covs, Hs, Omega = None):
     Nrx = Hs[0].shape[0]
     Z = np.eye(Nrx) if Omega is None else Omega
+    e = np.real(np.linalg.eigvalsh(Z))
+    v = log(np.product(e))
     rates = []
     Zs = []
     for MAC_Cov, H in zip(MAC_Covs, Hs):
         Znew = Z + H @ MAC_Cov @ H.conj().T
         Zs.append(Znew)
-        rate = logdet(Znew) - logdet(Z)
+        # compute rate = logdet(Znew) - logdet(Z)
+        e = np.real(np.linalg.eigvalsh(Znew))
+        vnew = log(np.product(e))
+        rate = max(vnew - v, 0)
         rates.append(rate)
         Z = Znew
+        v = vnew
     return rates, Zs
 
 
@@ -196,7 +234,7 @@ def BC_rates(BC_Covs, Hs, BC_encoding_order):
         Nrx = H.shape[0]
         IPN = np.eye(Nrx) + H @ Sum_INT @ H.conj().T
         rate = logdet(np.eye(Nrx) + H @ BC_Cov @ H.conj().T @ np.linalg.inv(IPN))
-        rates[user] = rate
+        rates[user] = max(0, rate)
         Sum_INT = Sum_INT + BC_Cov
     assert all(rates is not None for r in rates)
     return rates
@@ -282,8 +320,8 @@ def project_covariances(Covs, P):
 def MAC(Hs, P, weights, Omega=None, rate_threshold=1e-6, max_iterations=30):
     # start with no rate change
     rate_change = 0
-
-    matrix_equal = np.eye(Hs[0].shape[0]) if Omega is None else Omega
+    
+    Omega = np.eye(Hs[0].shape[0]) if Omega is None else Omega
     Hs_sorted, alphas, order = sort_channels(Hs, weights)
     sum_transmit_antennas = sum(H.shape[1] for H in Hs_sorted)
     MAC_Covs_sorted = [
@@ -318,7 +356,7 @@ def MAC(Hs, P, weights, Omega=None, rate_threshold=1e-6, max_iterations=30):
                 for MAC_Cov, dMAC_Cov in zip(MAC_Covs_sorted, dMAC_Covs)
             ]
             updated_MAC_Covs = project_covariances(updated_MAC_Covs, P)
-            rates = MAC_rates_ordered(updated_MAC_Covs, Hs_sorted)[0]
+            rates = MAC_rates_ordered(updated_MAC_Covs, Hs_sorted, Omega)[0]
             this_weighted_rate = sum(
                 [w * r for w, r in zip(sorted(weights, reverse=True), rates)]
             )
