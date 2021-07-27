@@ -26,15 +26,15 @@ def water_filling_cvx(ei, P):
 
 def water_filling(ei, P):
     assert all([e.imag == 0 for e in ei])
-    channel_gains = np.array(ei)
+    channel_gains = np.array(ei, dtype=np.double)
     nonzero_index = channel_gains >= 10e-16
-    powers_aux = np.zeros(len(channel_gains))
-    powers = np.zeros(len(channel_gains))
+    powers_aux = np.zeros(len(channel_gains), dtype=np.double)
+    powers = np.zeros(len(channel_gains), dtype=np.double)
     while any(powers_aux <= 0):
         channel_gains_aux = channel_gains[nonzero_index]
         eta = (P + sum(1 / channel_gains_aux)) / sum(nonzero_index)
         powers_aux = eta - (1 / channel_gains_aux)
-        powers = np.zeros(len(channel_gains))
+        powers = np.zeros(len(channel_gains), dtype=np.double)
         powers[nonzero_index] = powers_aux
         i = np.argmin(powers)
         nonzero_index[i] = False
