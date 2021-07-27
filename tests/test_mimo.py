@@ -9,20 +9,20 @@ import pytest
 from .context import mcm
 
 from mcm.mimo import (
-     MAC,
-     BC_rates,
-     MAC_cvx,
-     MAC_rates,
-     MAC_rates_ordered,
-     MACtoBCtransformation,
-     project_covariance_cvx,
-     project_covariances,
-     project_eigenvalues_to_given_sum_cvx,
-     project_eigenvalues_to_given_sum,
-     ptp_capacity,
-     ptp_capacity_cvx,
-     water_filling_cvx,
-     water_filling,
+    MAC,
+    BC_rates,
+    MAC_cvx,
+    MAC_rates,
+    MAC_rates_ordered,
+    MACtoBCtransformation,
+    project_covariance_cvx,
+    project_covariances,
+    project_eigenvalues_to_given_sum_cvx,
+    project_eigenvalues_to_given_sum,
+    ptp_capacity,
+    ptp_capacity_cvx,
+    water_filling_cvx,
+    water_filling,
 )
 
 from mcm.utils import inv_sqrtm, sqrtm, logdet, inv, det, log, eye
@@ -263,7 +263,7 @@ def test_MACwithUplinkNoise(MAC_fun, H_MAC, Ms_antennas_list, Bs_antennas, C, co
     mac_rates_eff, MAC_Covs_eff, order = MAC_fun(MAC_Hs_eff, P, weights)
     wsr_w_noise = sum([w * r for w, r in zip(weights, mac_rates_w_noise)])
     wsr_eff = sum([w * r for w, r in zip(weights, mac_rates_eff)])
-    assert wsr_w_noise == pytest.approx(wsr_eff, 1e-1):
+    assert wsr_w_noise == pytest.approx(wsr_eff, 1e-1)
 
 
 @pytest.mark.parametrize("MAC_fun", [MAC, MAC_cvx])

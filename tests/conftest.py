@@ -5,6 +5,7 @@ import logging
 
 from .context import mcm
 from mcm.utils import eye
+
 LOGGER = logging.getLogger(__name__)
 
 

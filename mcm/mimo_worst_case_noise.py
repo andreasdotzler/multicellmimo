@@ -90,7 +90,9 @@ def ptp_worst_case_noise_static(HQHT, sigma, precision=1e-2):
             break
         f_is.append(rate_i - np.real(np.trace(Z @ Z_gr)))
         subgradients.append(Z_gr)
-        mu, Z = noise_outer_approximation(f_is, subgradients, sigma, inf_constraints, mini=0)
+        mu, Z = noise_outer_approximation(
+            f_is, subgradients, sigma, inf_constraints, mini=0
+        )
     return rate_i, Z
 
 
@@ -158,15 +160,15 @@ def MAC_worst_case_noise_approx(
     Omega = np.eye(Bs_antennas) / Bs_antennas * sigma
     # TODO do a wsr once, than bounds for every user with weight and wsr_as target
     rates, _, _, _ = approx_inner_MAC(Hs_MAC, Omega, P, weights)
-    wsr = sum([w*r for w,r in zip(weights, rates)])
+    wsr = sum([w * r for w, r in zip(weights, rates)])
     Is = []
     for w, H in zip(weights, Hs):
         if w > 0:
-            Is += inf_cons(H, P, wsr/w)
-    #Is = []
+            Is += inf_cons(H, P, wsr / w)
+    # Is = []
     for i in range(1000):
         rates_i, Omega_gr, Covs, order = approx_inner_MAC(Hs_MAC, Omega, P, weights)
-        wsr_i = sum([w*r for w,r in zip(weights, rates_i)])
+        wsr_i = sum([w * r for w, r in zip(weights, rates_i)])
         LOGGER.debug(f"Iteration {i} - Value {wsr_i:.5f} - Approximation {mu:.5f}")
         if np.allclose(wsr_i, mu, rtol=precision):
             break
@@ -195,12 +197,14 @@ def approx_inner_ptp(H, Z, P):
 
 
 def approx_inner_MAC(Hs, Omega, P, weights):
-    #rates, MAC_Covs, order, eye_sbgr = MAC_cvx_with_noise_sbgr([pinv_sqrtm(Omega)@H for H in Hs], P, weights, Omega=np.eye(Omega.shape[0]))
-    #Omega_sbgr = pinv_sqrtm(Omega)@eye_sbgr@pinv_sqrtm(Omega)
-    rates, MAC_Covs, order, Omega_sbgr = MAC_cvx_with_noise_sbgr(Hs, P, weights, Omega=Omega)
+    # rates, MAC_Covs, order, eye_sbgr = MAC_cvx_with_noise_sbgr([pinv_sqrtm(Omega)@H for H in Hs], P, weights, Omega=np.eye(Omega.shape[0]))
+    # Omega_sbgr = pinv_sqrtm(Omega)@eye_sbgr@pinv_sqrtm(Omega)
+    rates, MAC_Covs, order, Omega_sbgr = MAC_cvx_with_noise_sbgr(
+        Hs, P, weights, Omega=Omega
+    )
     # TODO compare the gradient to ptp
 
-    #Omega_sbgr = pinv_sqrtm(Omega)@eye_sbgr@pinv_sqrtm(Omega)
+    # Omega_sbgr = pinv_sqrtm(Omega)@eye_sbgr@pinv_sqrtm(Omega)
     return rates, Omega_sbgr, MAC_Covs, order
 
 
