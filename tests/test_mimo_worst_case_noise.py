@@ -491,7 +491,7 @@ def test_MAC_worst_case_simple():
 
     rate_p2p1, Omega_p2p1, Cov_ptp1 = ptp_worst_case_noise_approx(H_1, P, sigma)
     rate_w1, Omega_w1, Covs_w1, order_w1 = MAC_worst_case_noise_approx(
-        [H_1, H_2], P, sigma, weights=[10, 0], precision=1e-2
+        [H_1, H_2], P, sigma, weights=[10, 0], precision=1e-4
     )
     assert rate_w1 == pytest.approx([r_1, 0], rel=1e-2, abs=1e-3)
     rate_p2p2, Omega_p2p2, Cov_ptp2 = ptp_worst_case_noise_approx(H_2, P, sigma)
@@ -506,7 +506,7 @@ def logpdet(A, t=1e-6):
     return log(np.product(a[a > t]))
 
 
-@pytest.mark.parametrize("Ms_antennas_list", [[2, 2]])
+@pytest.mark.parametrize("Ms_antennas_list", [[1, 2]])
 @pytest.mark.parametrize("Bs_antennas", [2])
 def test_worst_case_MIMO_2user(Ms_antennas_list, Bs_antennas, H_MAC, C):
     [H_1, H_2] = H_MAC
@@ -528,12 +528,17 @@ def test_worst_case_MIMO_2user(Ms_antennas_list, Bs_antennas, H_MAC, C):
     r_1d = logdet(eye(2) + inv(S_1) @ H_1 @ Q_1 @ H_1.conj().T)
     r_2d = logdet(eye(2) + inv(S_2) @ H_2 @ Q_2 @ H_2.conj().T)
     # if we set MS_antenns to 1 we need
-    # r_1d = logdet(eye(2) + inv(2*S_1) @ H_1 @ Q_1 @ H_1.conj().T)
-    # r_2d = logdet(eye(2) + inv(2*S_2) @ H_2 @ Q_2 @ H_2.conj().T)
+    r_1d = logdet(eye(2) + inv(Bs_antennas/Ms_antennas_list[0]*S_1) @ H_1 @ Q_1 @ H_1.conj().T)
+    r_2d = logdet(eye(2) + inv(Bs_antennas/Ms_antennas_list[1]*S_2) @ H_2 @ Q_2 @ H_2.conj().T)
+    R_1 = Bs_antennas/Ms_antennas_list[0]*eye(1)/1*np.trace(Q_1+Q_2) / 4 # TODO fix this scaling
+    assert r_1d == pytest.approx(logdet(eye(1) + inv(R_1 + H_1 @ Q_2 @ H_1.conj().T) @ H_1 @ Q_1 @ H_1.conj().T), rel=1e-2)
+    R_2 = Bs_antennas/Ms_antennas_list[1]*eye(2)/2*np.trace(Q_1+Q_2)
+    assert r_2d == pytest.approx(logdet(eye(2) + inv(R_2) @ H_2 @ Q_2 @ H_2.conj().T), rel=1e-2)
     # TODO, we need to make the scaling automatic tr(BB)=tr(CC)
     # TODO Q_1 and Q_2 are not really white, downlink transformation is not precice
     assert rates == pytest.approx([r_1d, r_2d], rel=1e-2, abs=1e-3)
-    assert S_1 == pytest.approx(S_2 + H_1 @ Q_2 @ H_1.conj().T, rel=1e-2, abs=1e-3)
+    assert all(np.linalg.eigvalsh(R_2 - Bs_antennas/Ms_antennas_list[1]*S_2) >= -1e-3)
+    assert S_1 == pytest.approx(R_1 + H_1 @ Q_2 @ H_1.conj().T, rel=1e-2, abs=1e-3)
 
 
 @pytest.mark.parametrize("Ms_antennas_list", [[1, 2, 3], [2, 2, 2]])
