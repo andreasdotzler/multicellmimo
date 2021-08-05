@@ -97,7 +97,7 @@ def ptp_worst_case_noise_static(HQHT, sigma, precision=1e-2):
 
 
 def inf_cons(H, P, rate):
-    """Find constraints on the worst-case uplink noise for a user
+    r"""Find constraints on the worst-case uplink noise for a user
 
     Keyword arguments:
     H -- channel matrix
@@ -106,8 +106,12 @@ def inf_cons(H, P, rate):
 
     Given a feasible uplink covariance we compute a set of matrices Is
     such that U = V
+    :math:`a^2 + b^2 = c^2`.
 
-    U = min_Omega max_Sigma logdet(I + inv(Omega) @ H.conj().T @ Sigma @ H): tr(Sigma) < P : Omega in Omegas, Omega >= Is forall I in Is 
+    .. math::
+
+        U = \min_{\Omega} \lbrace \max_{\Sigma} \lbrace \log\det(I + \Omega^{-1} H^H \Sigma H): tr(\Sigma) < P : \Omega in \Omega, \Omega \geq Is \forall I in Is \rbrace \rbrace 
+
     V = min_Omega max_Sigma logdet(I + inv(Omega) @ H.conj().T @ Sigma @ H): tr(Sigma) < P : Omega in Omegas 
     r = max_Sigma logdet(I + inv(Omega_p) @ H.conj().T @ Sigma @ H): tr(Sigma) < P
 
