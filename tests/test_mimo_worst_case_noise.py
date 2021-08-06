@@ -1,9 +1,6 @@
-import itertools
 import logging
 import random
-import math
 
-import cvxpy as cp
 import numpy as np
 import pytest
 
@@ -14,16 +11,12 @@ from mcm.mimo_worst_case_noise import (
     MAC_worst_case_noise_approx,
     ptp_worst_case_noise_static,
     ptp_capacity_minimax,
-    noise_outer_approximation,
-    approx_inner_MAC,
     inf_cons,
 )
 
 from mcm.mimo import (
     ptp_capacity,
-    ptp_capacity_cvx,
     MACtoBCtransformation,
-    water_filling,
     MAC_cvx_with_noise_sbgr,
 )
 

@@ -1,6 +1,4 @@
-import itertools
 import logging
-import random
 import itertools
 
 import numpy as np
@@ -25,7 +23,7 @@ from mcm.mimo import (
     water_filling,
 )
 
-from mcm.utils import inv_sqrtm, sqrtm, logdet, inv, det, log, eye
+from mcm.utils import inv_sqrtm, logdet
 
 
 LOGGER = logging.getLogger(__name__)

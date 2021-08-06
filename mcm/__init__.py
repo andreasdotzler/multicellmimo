@@ -1,3 +1,3 @@
-import mcm
+from mcm import mimo, mimo_worst_case_noise
 
-__all__ = ["MAC", "mimo", "mimo_worst_case"]
+__all__ = ["mimo", "mimo_worst_case_noise"]

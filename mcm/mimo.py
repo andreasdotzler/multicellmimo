@@ -1,16 +1,32 @@
+"""JUHU."""
 import logging
 import math
 import pytest
 
 import cvxpy as cp
 import numpy as np
-
-from .utils import pinv_sqrtm, inv_sqrtm, sqrtm, logdet, inv, det, log, eye, pinv
+from typing import List, Tuple, Optional
+from .utils import inv_sqrtm, sqrtm, logdet, log, pinv, argsort
+from .typing import Matrix
 
 LOGGER = logging.getLogger(__name__)
 
 
-def water_filling_cvx(ei, P):
+def water_filling_cvx(ei: List[float], P: float) -> List[float]:
+    """Water filling to optimized power allocation over multiple channels.
+
+    Parameters
+    ----------
+    ei: List[float]
+        Channel gains
+    P: float
+        Transmit power
+
+    Returns
+    -------
+    power: List[float]
+        Optimized power allocation
+    """
     assert all([e.imag == 0 for e in ei])
     power = cp.Variable(len(ei))
     alpha = cp.Parameter(len(ei), nonneg=True)
@@ -19,13 +35,24 @@ def water_filling_cvx(ei, P):
     constraints = [power >= 0, cp.sum(power) == P]
     prob = cp.Problem(obj, constraints)
     prob.solve(solver=cp.SCS, eps=1e-9)
-    if prob.status == "optimal":
-        return power.value
-    else:
-        return np.nan
+    return power.value
 
 
-def water_filling(ei, P):
+def water_filling(ei: List[float], P: float) -> List[float]:
+    """Water filling to optimized power allocation over multiple channels.
+
+    Parameters
+    ----------
+    ei: List[float]
+        Channel gains
+    P: float
+        Transmit power
+
+    Returns
+    -------
+    power: List[float]
+        Optimized power allocation
+    """
     assert all([e.imag == 0 for e in ei])
     channel_gains = np.array(ei, dtype=np.double)
     nonzero_index = channel_gains >= 10e-16
@@ -42,7 +69,21 @@ def water_filling(ei, P):
     return powers[powers >= 0]
 
 
-def MACtoBCtransformation(Hs, MAC_Cov, MAC_decoding_order):
+def MACtoBCtransformation(
+    Hs: List[Matrix], MAC_Covs: List[Matrix], MAC_decoding_order: List[int]
+) -> List[Matrix]:
+    """MAC to BC conversion.
+
+    Parameters
+    ----------
+    Hs
+    MAC_Covs
+    MAC_decoding_order
+
+    Returns
+    -------
+    BC_Covs
+    """
     BS_antennas = Hs[0].shape[1]
     BC_Covs = [np.zeros([BS_antennas, BS_antennas]) for _ in Hs]
     for k, ms in enumerate(MAC_decoding_order):
@@ -57,8 +98,8 @@ def MACtoBCtransformation(Hs, MAC_Cov, MAC_decoding_order):
 
         # Compute B
         temp_sum = np.eye(BS_antennas)
-        for j in MAC_decoding_order[k + 1 :]:
-            temp_sum = temp_sum + Hs[j].conj().T @ MAC_Cov[j] @ Hs[j]
+        for j in MAC_decoding_order[k + 1:]:
+            temp_sum = temp_sum + Hs[j].conj().T @ MAC_Covs[j] @ Hs[j]
         B = temp_sum
 
         # Take SVD of effective channel
@@ -73,7 +114,7 @@ def MACtoBCtransformation(Hs, MAC_Cov, MAC_decoding_order):
             @ Fms
             @ Gms.conj().T
             @ sqrtm(A)
-            @ MAC_Cov[ms]
+            @ MAC_Covs[ms]
             @ sqrtm(A)
             @ Gms
             @ Fms.conj().T
@@ -83,15 +124,32 @@ def MACtoBCtransformation(Hs, MAC_Cov, MAC_decoding_order):
     return BC_Covs
 
 
-def ptp_capacity_cvx(H, P, Z=None):
+def ptp_capacity_cvx(H: Matrix, P: float, Z: Optional[Matrix] = None, rcond: float = 1e-6) -> Tuple[float, Matrix]:
+    """Optimize transmit covariance for point-to-point MIMO link.
+
+    Parameters
+    ----------
+    H: Matrix
+        Channel matrix
+    P: float
+        Transmit power
+    Z: Matrix
+        Noise covariance
+
+    Returns
+    -------
+    rate: float
+        data rate
+    Z: Matrix
+        transmit covariance matrix
+    """
     Nrx, Ntx = H.shape
-    Cov = cp.Variable([Ntx, Ntx], hermitian=True)
-    I = np.eye(Ntx)
+    Cov = cp.Variable((Ntx, Ntx), hermitian=True)
     if Z is None:
-        cost = cp.log_det(I + Cov @ H.conj().T @ H)
+        cost = cp.log_det(np.eye(Ntx) + Cov @ H.conj().T @ H)
     else:
         assert (Nrx, Nrx) == Z.shape
-        cost = cp.log_det(I + Cov @ H.conj().T @ inv(Z) @ H)
+        cost = cp.log_det(np.eye(Ntx) + Cov @ H.conj().T @ pinv(Z, rcond, hermitian=True) @ H)
     power = cp.real(cp.trace(Cov)) <= P
     positivity = Cov >> 0
     constraints = [power, positivity]
@@ -100,7 +158,25 @@ def ptp_capacity_cvx(H, P, Z=None):
     return prob.value, Cov.value
 
 
-def ptp_capacity(H, P, Z=None, rcond=1e-6):
+def ptp_capacity(H: Matrix, P: float, Z: Optional[Matrix] = None, rcond: float = 1e-6) -> Tuple[float, Matrix]:
+    """Optimize transmit covariance for point-to-point MIMO link.
+
+    Parameters
+    ----------
+    H: Matrix
+        Channel matrix
+    P: float
+        Transmit power
+    Z: Matrix
+        Noise covariance
+
+    Returns
+    -------
+    rate: float
+        data rate
+    Z: Matrix
+        transmit covariance matrix
+    """
     if Z is None:
         HH_d = H.conj().T @ H
     else:
@@ -114,18 +190,27 @@ def ptp_capacity(H, P, Z=None, rcond=1e-6):
     return rate, Cov
 
 
-def argsort(weights, reverse=False):
-    # sort channels
-    # https://stackoverflow.com/a/6618543
-    return [
-        o
-        for o, _ in sorted(
-            enumerate(weights), reverse=reverse, key=lambda pair: pair[1]
-        )
-    ]
+def sort_channels(
+    Hs: List[Matrix], weights: List[float]
+) -> Tuple[List[Matrix], List[float], List[int]]:
+    """Sort channels in encoding order.
 
+    Parameters
+    ----------
+    Hs: List[Matrix]
+        channel matrices
+    weights: List[float]
+        user weights
 
-def sort_channels(Hs, weights):
+    Returns
+    -------
+    Hs_sorted: List[Matrix]
+        Sorted channel matrices
+    alphas: List[float]
+        Coefficients for MAC reformulation
+    order
+        Encoding order
+    """
     order = argsort(weights)
     Hs = [Hs[k] for k in order[::-1]]
     weights_reverse = sorted(weights, reverse=True)
@@ -134,11 +219,35 @@ def sort_channels(Hs, weights):
 
 
 def MAC_cvx(Hs, P, weights, Omega=None):
+    """Wrap MAC_cvc_with_hoise_sbgr."""
     rates, MAC_Covs, order, _ = MAC_cvx_with_noise_sbgr(Hs, P, weights, Omega)
     return rates, MAC_Covs, order
 
 
 def MAC_cvx_with_noise_sbgr(Hs, P, weights, Omega=None):
+    """Optimize uplink covriances to maximize weighted sum-rate.
+
+    Parameters
+    ----------
+    Hs: List[Matrix]
+        Channel Matrices
+    P: float
+        Transmit power constraint
+    weights: List[float]
+        User weights
+    Omega: Optional[Matrix]
+        Uplink noise covariance
+
+    Returns
+    -------
+    rates: List[float]
+        User rates
+    MAC_Covs: List[Matrices]
+        Transmit covariances
+    order: List[int]
+        Decodicng order
+
+    """
     # TODO, this function does not handle a rank deficient noise very well
     MAC_Covs = []
     Xs = []
@@ -155,8 +264,8 @@ def MAC_cvx_with_noise_sbgr(Hs, P, weights, Omega=None):
     Nrx_eff = len(psigma_diag)
     for H in Hs_sorted:
         Nrx, Ntx = H.shape
-        MAC_Covs.append(cp.Variable([Ntx, Ntx], hermitian=True))
-        Xs.append(cp.Variable([Nrx_eff, Nrx_eff], hermitian=True))
+        MAC_Covs.append(cp.Variable((Ntx, Ntx), hermitian=True))
+        Xs.append(cp.Variable((Nrx_eff, Nrx_eff), hermitian=True))
     cost = cp.sum([alpha * cp.log_det(X) for X, alpha in zip(Xs, alphas)])
     mat = []
     matrix_equal = np.eye(Nrx_eff)
@@ -191,22 +300,64 @@ def MAC_cvx_with_noise_sbgr(Hs, P, weights, Omega=None):
     return rates, MAC_Covs, order, Omega_sbgr
 
 
-def MAC_rates(MAC_Covs, Hs, MAC_decoding_order, Omega=None):
-    return MAC_rates_withZs(MAC_Covs, Hs, MAC_decoding_order, Omega)[0]
+# def MAC_rates(MAC_Covs, Hs, MAC_decoding_order, Omega=None):
+#    return MAC_rates_withZs(MAC_Covs, Hs, MAC_decoding_order, Omega)[0]
 
 
-def MAC_rates_withZs(MAC_Covs, Hs, MAC_decoding_order, Omega=None):
-    order = list(reversed(MAC_decoding_order))
+def MAC_rates(MAC_Covs: List[Matrix], Hs: List[Matrix],
+              MAC_decoding_order: List[int],
+              Omega: Optional[Matrix] = None) -> List[float]:
+    """Compute uplink data rates.
+
+    Parameters
+    ----------
+    MAC_Covs: List[Matrix]
+        Uplink transmit covriances
+    Hs: List[Matrix]
+        Channel Matrices
+    MAC_decoding_order: List[int]
+        Decoding order
+    Omega: Optimal[Matrix]
+        Uplink noise covariance
+
+    Returns
+    -------
+    rates: List[float]
+        Data rates
+
+    """
+    order: List[int] = list(reversed(MAC_decoding_order))
     Hs_sorted = [Hs[k] for k in order]
     MAC_Covs_sorted = [MAC_Covs[k] for k in order]
     rates_sorted, Zs = MAC_rates_ordered(MAC_Covs_sorted, Hs_sorted, Omega)
-    rates = [None for _ in order]
+    rates: List[float] = [0] * len(order)
     for r, o in zip(rates_sorted, order):
         rates[o] = r
-    return rates, Zs
+    return rates
 
 
-def MAC_rates_ordered(MAC_Covs, Hs, Omega=None):
+def MAC_rates_ordered(MAC_Covs: List[Matrix],
+                      Hs: List[Matrix],
+                      Omega: Optional[Matrix] = None) -> Tuple[List[float], List[Matrix]]:
+    """Compute uplink data rates.
+
+    Parameters
+    ----------
+    MAC_Covs: List[Matrix]
+        Transmit covariance matrices
+    Hs: List[Matrix]
+        Channel matrices
+    Omega: Optional[Matrix]
+        Uplink noise covriance
+
+    Returns
+    -------
+    rates: List[float]
+        Data rates
+    Zs: List[Matrix]
+        the ZZSS
+
+    """
     Nrx = Hs[0].shape[0]
     Z = np.eye(Nrx) if Omega is None else Omega
     e = np.real(np.linalg.eigvalsh(Z))
@@ -226,8 +377,25 @@ def MAC_rates_ordered(MAC_Covs, Hs, Omega=None):
     return rates, Zs
 
 
-def BC_rates(BC_Covs, Hs, BC_encoding_order):
-    rates = [None for _ in BC_encoding_order]
+def BC_rates(BC_Covs: List[Matrix], Hs: List[Matrix], BC_encoding_order: List[int]) -> List[Optional[float]]:
+    """Compute data rates for broadcast channel.
+
+    Parameters
+    ----------
+    BC_Covs: List[Matrix]
+        Broadcast transmit covariances
+    Hs: List[Matrix]
+        Channel matrices
+    BC_encoding_order: List[int]
+        Encoding order
+
+    Returns
+    -------
+    rates: List[float]
+        Data rates
+
+    """
+    rates: List[Optional[float]] = [None for _ in BC_encoding_order]
     Ntx = Hs[0].shape[1]
     Sum_INT = np.zeros([Ntx, Ntx])
     for user in reversed(BC_encoding_order):
@@ -242,20 +410,47 @@ def BC_rates(BC_Covs, Hs, BC_encoding_order):
     return rates
 
 
-def project_eigenvalues_to_given_sum_cvx(e, P):
-    # setup the objective and constraints and solve the problem
-    x = cp.Variable(len(e))
-    obj = cp.Minimize(cp.sum_squares(e - x))
+def project_eigenvalues_to_given_sum_cvx(eis, P):
+    """Project eigenvalues to power constraint.
+
+    Parameters
+    ----------
+    eis: List[float]
+        Eigenvalues
+    P: float
+        Power constraint
+
+    Returns
+    -------
+    projected_eis: List[float]
+        Projected eigenvalues
+    """
+    x = cp.Variable(len(eis))
+    obj = cp.Minimize(cp.sum_squares(eis - x))
     constraints = [x >= 0, cp.sum(x) == P]
     prob = cp.Problem(obj, constraints)
     prob.solve(solver=cp.SCS, eps=1e-15)
     return x.value
 
 
-def project_eigenvalues_to_given_sum(e, P):
-    assert np.all(np.imag(e) == 0)
+def project_eigenvalues_to_given_sum(eis: List[float], P: float) -> List[float]:
+    """Project eigenvalues to power constraint.
+
+    Parameters
+    ----------
+    eis: List[float]
+        Eigenvalues
+    P: float
+        Power constraint
+
+    Returns
+    -------
+    projected_eis: List[float]
+        Projected eigenvalues
+    """
+    assert np.all(np.imag(eis) == 0)
     # sort them
-    sorted_eigenvalues = sorted(np.real(e))
+    sorted_eigenvalues = sorted(np.real(eis))
 
     # find current sum
     current_sum = sum(sorted_eigenvalues)
@@ -275,13 +470,27 @@ def project_eigenvalues_to_given_sum(e, P):
     reduction = (
         current_sum - P - sum(sorted_eigenvalues[:values_smaller_zero])
     ) / values_geq_zero
-    projected_eigenvalues = e - reduction
-    projected_eigenvalues[projected_eigenvalues < 0] = 0
+    projected_eigenvalues = [e - reduction for e in eis]
+    projected_eigenvalues[projected_eigenvalues < 0.0] = 0
     return projected_eigenvalues
 
 
-def project_covariance_cvx(Xs, P):
-    Covs = [cp.Variable([X.shape[0], X.shape[0]], hermitian=True) for X in Xs]
+def project_covariance_cvx(Xs: List[Matrix], P: float) -> List[Matrix]:
+    """Project covariance matrices to power constraint.
+
+    Implements the optimization of :func:`~mcm.mimo.project_convariances` in CVX.
+
+    Parameters
+    ----------
+    Xs
+    P
+
+    Returns
+    -------
+    projected_Covs
+
+    """
+    Covs = [cp.Variable((X.shape[0], X.shape[0]), hermitian=True) for X in Xs]
     obj = cp.Minimize(cp.sum([cp.sum_squares(Cov - X) for Cov, X in zip(Covs, Xs)]))
     power = cp.sum([cp.real(cp.trace(Cov)) for Cov in Covs]) <= P
     positivity = [(Cov >> 0) for Cov in Covs]
@@ -291,7 +500,27 @@ def project_covariance_cvx(Xs, P):
     return [Cov.value for Cov in Covs]
 
 
-def project_covariances(Covs, P):
+def project_covariances(Covs: List[Matrix], P: float) -> List[Matrix]:
+    r"""Project covariance matrices to power constraint..
+
+    .. math::
+
+     \min_{\Omega} \lbrace \sum_{k \in K} \norm{C_k-X_k}_{F}^{2} : \sum_{k \in K}\tr(C_k) \leq P, C_k \geq 0 \forall k \in K \rbrace
+
+    Parameters
+    ----------
+    Covs
+        Covariances to be projected
+    P
+        Target power constraint
+
+    Returns
+    -------
+    List[Matrix]
+        Projected Covariances
+
+
+    """
     eigs = []
     VVs = []
     for uMAC_Cov in Covs:
@@ -308,10 +537,10 @@ def project_covariances(Covs, P):
     assert sum(projected) <= P * 1.01
     # update
     Covs = []
-    sum_eigs = 0
+    sum_eigs = 0.0
     offset = 0
     for eig, VV in zip(eigs, VVs):
-        new_eigs = projected[offset : offset + len(eig)]
+        new_eigs = projected[offset: offset + len(eig)]
         offset += len(eig)
         sum_eigs += sum(new_eigs)
         Covs.append(VV @ np.diag(new_eigs) @ VV.conj().T)
@@ -319,9 +548,54 @@ def project_covariances(Covs, P):
     return Covs
 
 
-def MAC(Hs, P, weights, Omega=None, rate_threshold=1e-6, max_iterations=30):
+def MAC(
+    Hs: List[Matrix],
+    P: float,
+    weights: List[float],
+    Omega: Optional[Matrix] = None,
+    rate_threshold: float = 1e-6,
+    max_iterations: int = 30,
+) -> Tuple[List[float], List[Optional[Matrix]], List[int]]:
+    r"""
+    Optimize uplink transmit covariances.
+
+    Given channel matrices :math:`(H_1, \ldots, H_K) `
+
+    .. math::
+
+        [\Sigma_1, \ldots, \Sigma_K] = \
+        \max_{\Sigma_1,\ldots,\Sigma} \lbrace \sum_{k \in K} w_k r_k(\Sigma_1,\ldots,\Sigma_k): \
+        \sum_{k\in K} \tr(\Sigma_k) < P, \
+        \Sigma_k in \geq 0 \forall k \in K \rbrace
+
+
+    Parameters
+    ----------
+    Hs: List[Matrix]
+        Channel Matrices
+    P: float
+        Transmit power constraint
+    weights: List[float]
+        User weights
+    Omega: Optional[Matrix]
+        Uplink noise covariance
+    rate_threshold: float
+        Threshold for rate change to continue optimization
+    max_iterations: int
+        Limit on the numnber of iterations
+
+    Returns
+    -------
+    rates: List[float]
+        User rates
+    MAC_Covs: List[Matrices]
+        Transmit covariances
+    order: List[int]
+        Decodicng order
+
+    """
     # start with no rate change
-    rate_change = 0
+    rate_change = 0.0
 
     Omega = np.eye(Hs[0].shape[0]) if Omega is None else Omega
     Hs_sorted, alphas, order = sort_channels(Hs, weights)
@@ -336,7 +610,7 @@ def MAC(Hs, P, weights, Omega=None, rate_threshold=1e-6, max_iterations=30):
     # compute Z matrix
     for outer_i in range(max_iterations):
         rates, Zs = MAC_rates_ordered(MAC_Covs_sorted, Hs_sorted, Omega)
-        last_weighted_rate = sum(
+        last_weighted_rate: float = sum(
             [w * r for w, r in zip(sorted(weights, reverse=True), rates)]
         )
         # precompute inverses
@@ -359,7 +633,7 @@ def MAC(Hs, P, weights, Omega=None, rate_threshold=1e-6, max_iterations=30):
             ]
             updated_MAC_Covs = project_covariances(updated_MAC_Covs, P)
             rates = MAC_rates_ordered(updated_MAC_Covs, Hs_sorted, Omega)[0]
-            this_weighted_rate = sum(
+            this_weighted_rate: float = sum(
                 [w * r for w, r in zip(sorted(weights, reverse=True), rates)]
             )
             LOGGER.info(
@@ -377,8 +651,9 @@ def MAC(Hs, P, weights, Omega=None, rate_threshold=1e-6, max_iterations=30):
         if rate_change / this_weighted_rate < rate_threshold:
             break
 
-    MAC_Covs = [None for _ in order]
+    MAC_Covs: List[Optional[Matrix]] = [None for _ in order]
     for Cov, o in zip(MAC_Covs_sorted, order[::-1]):
         MAC_Covs[o] = Cov
     rates = MAC_rates(MAC_Covs, Hs, order, Omega)
+
     return rates, MAC_Covs, order

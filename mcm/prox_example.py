@@ -1,3 +1,5 @@
+"""TODO."""
+
 import cvxpy as cp
 import numpy as np
 
@@ -27,7 +29,7 @@ for n in range(1, 1000):
     print(f"The optimimum of approximation is {prob.value}")
     print(f"The optimal rates of the approximation are {r.value}")
     print(f"The timeshare coefficients of the approximation are {alpha.value}")
-    print(f"The dual variables are", list(c.dual_value for c in constraints))
+    print(f"The dual variables are {list(c.dual_value for c in constraints)}")
 
     # check the KKT system
 
@@ -76,7 +78,7 @@ for n in range(1, 1000):
         f"The optimimum of the dual approximation is {prob_dual.value} + {mu} = {prob_dual.value + mu}"
     )
     print(f"The optimal rates of the dual approximation are {q.value}")
-    print(f"The dual variables are", c4.dual_value)
+    print(f"The dual variables are {c4.dual_value}")
 
     A_phy = np.matrix("1,1; 2,1")
     b_phy = [6, 8]
