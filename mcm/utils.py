@@ -1,8 +1,12 @@
 """COPYRIGTH."""
 import numpy as np
 
-from .typing import Matrix
+from .mcm_typing import Matrix
 from typing import List
+
+
+class InfeasibleOptimization(Exception):
+    pass
 
 inv = np.linalg.inv
 pinv = np.linalg.pinv

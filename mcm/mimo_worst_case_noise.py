@@ -1,16 +1,14 @@
 """TODO we want typing and assert istype on uplink and downlink channels"""
 import logging
-import cvxpy as cp
 import math
-from typing import List, Tuple, Optional, Any
+from typing import List, Tuple, Optional
+
+import cvxpy as cp
 import numpy as np
 
-from .mimo import MAC_cvx
-from .mimo import ptp_capacity
-from .mimo import water_filling
+from .mimo import MAC_cvx, ptp_capacity, water_filling
+from .mcm_typing import Matrix
 from .utils import sqrtm, logdet
-from .typing import Matrix
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -262,7 +260,7 @@ def MAC_worst_case_noise_approx(
 
 
 def approx_inner_ptp(H: Matrix, Z: Matrix, P: float) -> Tuple[float, Matrix, Matrix]:
-    """TODO: match with ptp MIMO.
+    """TODO: match with ptp MIMO. CHECK uplink and DOWNLINK Covariances
 
     Parameters
     ----------

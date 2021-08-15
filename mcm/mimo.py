@@ -7,7 +7,7 @@ import cvxpy as cp
 import numpy as np
 from typing import List, Tuple, Optional
 from .utils import inv_sqrtm, sqrtm, logdet, log, pinv, argsort
-from .typing import Matrix
+from .mcm_typing import Matrix
 
 LOGGER = logging.getLogger(__name__)
 
@@ -98,7 +98,7 @@ def MACtoBCtransformation(
 
         # Compute B
         temp_sum = np.eye(BS_antennas)
-        for j in MAC_decoding_order[k + 1:]:
+        for j in MAC_decoding_order[k + 1 :]:
             temp_sum = temp_sum + Hs[j].conj().T @ MAC_Covs[j] @ Hs[j]
         B = temp_sum
 
@@ -124,7 +124,9 @@ def MACtoBCtransformation(
     return BC_Covs
 
 
-def ptp_capacity_cvx(H: Matrix, P: float, Z: Optional[Matrix] = None, rcond: float = 1e-6) -> Tuple[float, Matrix]:
+def ptp_capacity_cvx(
+    H: Matrix, P: float, Z: Optional[Matrix] = None, rcond: float = 1e-6
+) -> Tuple[float, Matrix]:
     """Optimize transmit covariance for point-to-point MIMO link.
 
     Parameters
@@ -149,7 +151,9 @@ def ptp_capacity_cvx(H: Matrix, P: float, Z: Optional[Matrix] = None, rcond: flo
         cost = cp.log_det(np.eye(Ntx) + Cov @ H.conj().T @ H)
     else:
         assert (Nrx, Nrx) == Z.shape
-        cost = cp.log_det(np.eye(Ntx) + Cov @ H.conj().T @ pinv(Z, rcond, hermitian=True) @ H)
+        cost = cp.log_det(
+            np.eye(Ntx) + Cov @ H.conj().T @ pinv(Z, rcond, hermitian=True) @ H
+        )
     power = cp.real(cp.trace(Cov)) <= P
     positivity = Cov >> 0
     constraints = [power, positivity]
@@ -158,7 +162,9 @@ def ptp_capacity_cvx(H: Matrix, P: float, Z: Optional[Matrix] = None, rcond: flo
     return prob.value, Cov.value
 
 
-def ptp_capacity(H: Matrix, P: float, Z: Optional[Matrix] = None, rcond: float = 1e-6) -> Tuple[float, Matrix]:
+def ptp_capacity(
+    H: Matrix, P: float, Z: Optional[Matrix] = None, rcond: float = 1e-6
+) -> Tuple[float, Matrix]:
     """Optimize transmit covariance for point-to-point MIMO link.
 
     Parameters
@@ -304,9 +310,12 @@ def MAC_cvx_with_noise_sbgr(Hs, P, weights, Omega=None):
 #    return MAC_rates_withZs(MAC_Covs, Hs, MAC_decoding_order, Omega)[0]
 
 
-def MAC_rates(MAC_Covs: List[Matrix], Hs: List[Matrix],
-              MAC_decoding_order: List[int],
-              Omega: Optional[Matrix] = None) -> List[float]:
+def MAC_rates(
+    MAC_Covs: List[Matrix],
+    Hs: List[Matrix],
+    MAC_decoding_order: List[int],
+    Omega: Optional[Matrix] = None,
+) -> List[float]:
     """Compute uplink data rates.
 
     Parameters
@@ -336,9 +345,9 @@ def MAC_rates(MAC_Covs: List[Matrix], Hs: List[Matrix],
     return rates
 
 
-def MAC_rates_ordered(MAC_Covs: List[Matrix],
-                      Hs: List[Matrix],
-                      Omega: Optional[Matrix] = None) -> Tuple[List[float], List[Matrix]]:
+def MAC_rates_ordered(
+    MAC_Covs: List[Matrix], Hs: List[Matrix], Omega: Optional[Matrix] = None
+) -> Tuple[List[float], List[Matrix]]:
     """Compute uplink data rates.
 
     Parameters
@@ -377,7 +386,9 @@ def MAC_rates_ordered(MAC_Covs: List[Matrix],
     return rates, Zs
 
 
-def BC_rates(BC_Covs: List[Matrix], Hs: List[Matrix], BC_encoding_order: List[int]) -> List[Optional[float]]:
+def BC_rates(
+    BC_Covs: List[Matrix], Hs: List[Matrix], BC_encoding_order: List[int]
+) -> List[Optional[float]]:
     """Compute data rates for broadcast channel.
 
     Parameters
@@ -540,14 +551,14 @@ def project_covariances(Covs: List[Matrix], P: float) -> List[Matrix]:
     sum_eigs = 0.0
     offset = 0
     for eig, VV in zip(eigs, VVs):
-        new_eigs = projected[offset: offset + len(eig)]
+        new_eigs = projected[offset : offset + len(eig)]
         offset += len(eig)
         sum_eigs += sum(new_eigs)
         Covs.append(VV @ np.diag(new_eigs) @ VV.conj().T)
     assert sum_eigs <= P * 1.01
     return Covs
 
-
+# TODO, let us also do an outer approximation
 def MAC(
     Hs: List[Matrix],
     P: float,
