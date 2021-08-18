@@ -50,6 +50,7 @@ def optimize_network_app_phy(q_min, q_max, wsr_phy):
         import pytest
         assert 1 / q + w_min - w_max - weights == pytest.approx(np.zeros(len(q)), rel=1e-2, abs=1e-1)
         # TDODO we need to verify the weights here
+        assert all(weights @ (A - q.reshape(len(q), 1)) <= 0.001)
 
         q_app = np.minimum(q_max, np.maximum(q_min, 1 / weights))
         q_app[weights <= 0] = q_max[weights <= 0]
@@ -68,33 +69,37 @@ def optimize_network_app_phy(q_min, q_max, wsr_phy):
         # R_approx(q) = 0
         # TODO v_app + v_phy ist the current dual value, we shoul track the minmal one
         dual_value = v_app + v_phy
-        LOGGER.info(f"Iteraction {n} - Dual Approximation {approx_value} - Dual Value {dual_value}")
+        LOGGER.info(f"Max_mode: Iteraction {n} - Dual Approximation {approx_value} - Dual Value {dual_value}")
         if abs(dual_value - approx_value) < 0.001:
             break
     return approx_value, q
 
 # TODO make cost function a variable
+# TDOO we neet to find out what we are really doing her?
+# Very likely we are doing the mode competition and keep all approximation points,
+# but we should be able to to better, by using I_C_m_l and a weight for every function
+# Approximation max_{c_m_t ...} V(c_m_t ...) + sum_{m} sum_{t} I_C_m_L(c_m_t)
+# and inner approximation of I_C_m_l
+
+# TODO, Does the approximation problem reformulate?
+
+# compare to (4.97) in the thesis
 def optimize_network_app_network(q_min, q_max, network):
-    wsr_phy = network.wsr_per_mode
+
+    n_users = len(q_min)
+    assert len(q_max) == n_users
+    # we need to initialize a fake mode that is all q_min
     users_per_transmitter = {}
-
-
     users_per_node_and_transmitter_approx = {'init_mode': {}}
-    # # initialize empty was not a good idea
     for mode in network.As:
-    #     A_approx[mode] = {}
         users_per_node_and_transmitter_approx[mode] = {}
         for transmitter, users in network.users_per_mode_and_transmitter[mode].items():
-    #         A_approx[mode][transmitter] = np.empty((0,len(users)))
             if transmitter not in users_per_transmitter:
                 users_per_transmitter[transmitter] = []
             users_per_transmitter[transmitter] += users
-            #users_per_node_and_transmitter_approx[mode][transmitter] = copy.copy(users)
 
     A_approx = {}
     A_approx['init_mode'] = {}
-    # this iw wrong, we are iterating over modes
-
     for transmitter, users in users_per_transmitter.items():
         unique_users = list(set(users))
         a = q_min[unique_users]
@@ -102,22 +107,25 @@ def optimize_network_app_network(q_min, q_max, network):
         A_approx['init_mode'][transmitter] = a
         users_per_node_and_transmitter_approx['init_mode'][transmitter] = unique_users
 
-
-    n_users = len(q_min)
-    assert len(q_max) == n_users
-    A = np.minimum(q_max,q_min).reshape((n_users,1))
-    # we need to initialize a fake mode that is all q_min
-
     for n in range(1, 1000):
         # create and solve the approximated problem
 
         # time_sharing_network
-        approx_value, q_app, alpha, [weights_1, w_min, w_max, mu] = time_sharing_dual(proportional_fair, A, q_min, q_max)
+
         approx_value, rates, alphas, weights = timesharing_network(proportional_fair,
                                                                 users_per_node_and_transmitter_approx, A_approx,
                                                                 q_min, q_max)
 
+        import pytest
+        #assert 1 / rates + w_min - w_max - weights == pytest.approx(np.zeros(len(q)), rel=1e-2, abs=1e-1)
+        # TDODO we need to verify the weights here
+    
+        #assert all(weights @ (A - q.reshape(len(q), 1)) <= 0.001)
 
+        # weights[:10] @ r_m_t
+        # r_m_t = A_approx['reuse1'][1] @ alphas['reuse1'][1]
+        # weights[:10] @ (A_approx['reuse1'][1] - r_m_t)
+        # TODO we need to reformulate the timesharing networks, to make r_m_t explicit constraints with a dual variable, which we can return
         q_app = np.minimum(q_max, np.maximum(q_min, 1 / weights))
         q_app[weights <= 0] = q_max[weights <= 0]
         v_app = sum(np.log(q_app)) - weights @ q_app
@@ -138,8 +146,9 @@ def optimize_network_app_network(q_min, q_max, network):
                 if sum_vals > max_val:
                     max_val = sum_vals
                     max_mode = mode
-        #import ipdb; ipdb.set_trace()
+        v_phy = max_val
 
+        # update the approximation
         for mode, rates_per_transmitter in A_max.items():
             if mode not in A_approx:
                 A_approx[mode] = {}
@@ -150,15 +159,9 @@ def optimize_network_app_network(q_min, q_max, network):
                 else:
                     A_approx[mode][transmitter] = np.c_[A_approx[mode][transmitter], rates.reshape((len(rates),1))]
 
-        v_phy, c = wsr_phy(weights)
-        A = np.c_[A, c]
-        v_phy = max_val
-
-
         dual_value = v_app + v_phy
-        LOGGER.info(f"Iteraction {n} - Dual Approximation {approx_value} - Dual Value {dual_value}")
+        LOGGER.info(f"Network: Iteraction {n} - Dual Approximation {approx_value} - Dual Value {dual_value}")
         if abs(dual_value - approx_value) < 0.001:
-            import ipdb; ipdb.set_trace()
             break
 
     return approx_value, q_app
@@ -206,7 +209,7 @@ def timesharing_network(cost_function, users_per_mode_and_transmitter, As, q_min
         for transmitter, rates in rates_per_transmitter.items():
             alphas[mode][transmitter] = cp.Variable(rates.shape[1], nonneg=True)
 
-
+    # TODO we need to replace the user constraints with constraints for c_m_t and return the dual variables
     r_constraints = {}
     for mode, transmitters_and_users in users_per_mode_and_transmitter.items():
         for transmitter, users in transmitters_and_users.items():
@@ -216,6 +219,8 @@ def timesharing_network(cost_function, users_per_mode_and_transmitter, As, q_min
                     r_constraints[user] += constraint
                 else:
                     r_constraints[user] = constraint
+    # need to to this for every t and m - for c1 = r == A @ alpha
+
 
     n_users = len(r_constraints)
     r = cp.Variable(n_users, nonneg=True)
