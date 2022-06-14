@@ -1,7 +1,9 @@
 import numpy as np
 import pytest
-from mcm.algorithms import (optimize_primal_sub,
-                            optimize_primal_subgradient_projected)
+from mcm.algorithms import (optimize_primal_column,
+                            optimize_primal_sub,
+                            optimize_primal_subgradient_projected,
+                            optimize_primal_subgradient_rosen)
 from mcm.network_optimization import (I_C, I_C_Q, dual_problem_app,
                                       optimize_app_phy,
                                       optimize_dual_decomp_approx,
@@ -39,7 +41,11 @@ def test_timesharing_wsr():
 
 
 #@pytest.mark.parametrize("A", [np.array([[0.4, 0.1], [0.1, 0.2]]).T, np.random.rand(10,200)*3])
-@pytest.mark.parametrize("optimize", [optimize_primal_sub, optimize_primal_subgradient_projected])
+@pytest.mark.parametrize("optimize", [optimize_primal_column, 
+                                      #optimize_primal_sub, 
+                                      optimize_primal_subgradient_projected, 
+                                      optimize_primal_subgradient_rosen
+                                      ])
 def test_primal_sub(A, optimize):
     n_users = A.shape[0]
     q_min = np.array([0.1]*n_users)
@@ -56,7 +62,7 @@ def test_primal_sub(A, optimize):
 
 @pytest.fixture(scope="function")
 def seed():
-    np.random.seed(42)
+    np.random.seed(41)
 
 @pytest.fixture(scope="function", params=[[2,2], [10,40]])
 def A(request, seed):
@@ -74,12 +80,16 @@ def test_timesharing_fair(A):
     q_max[0] = 0.2
 
     value, rates, alpha, [lambda_opt, w_min, w_max, mu] = time_sharing_cvx(proportional_fair, A, q_min, q_max)
-    assert 1/rates + w_min - w_max - lambda_opt == pytest.approx(np.zeros(len(rates)), rel=1e-2, abs=1e-1)
-
+    
     # verifiy KKT
+    assert 1/rates + w_min - w_max - lambda_opt == pytest.approx(np.zeros(len(rates)), rel=1e-2, abs=1e-1)
+    assert all(lambda_opt @ (A - rates.reshape(len(rates), 1)) <= 0.001)
     q_app = np.minimum(q_max, np.maximum(q_min, 1 / lambda_opt))
     q_app[lambda_opt <= 0] = q_max[lambda_opt <= 0]
+ 
     assert rates == pytest.approx(q_app, rel=1e-3, abs=1e-1)
+
+    
 
     dual_value_app, q_app = dual_problem_app(proportional_fair, lambda_opt, q_max, q_min)
     assert dual_value_app == pytest.approx(sum(np.log(q_app)) - lambda_opt@q_app)
@@ -92,14 +102,10 @@ def test_timesharing_fair(A):
 
     # now by iterative optimization
     wsr = I_C(A)
-    opt_value, opt_q = optimize_app_phy(proportional_fair, q_min, q_max, wsr)
+    opt_value, opt_q, _, _ = optimize_app_phy(proportional_fair, q_min, q_max, wsr)
     assert value == pytest.approx(opt_value, rel=1e-3, abs=1e-1)
     assert rates == pytest.approx(opt_q, rel=1e-3, abs=1e-1)
 
-    wsr_C_Q = I_C_Q(A, q_min, q_max)
-    opt_value_C_Q, opt_C_Q = optimize_app_phy(proportional_fair, q_min = np.array([0.001] * n_users), q_max = np.array([10] * n_users), wsr_phy=wsr_C_Q)
-    assert value == pytest.approx(opt_value_C_Q, rel=1e-3, abs=1e-1)
-    assert rates == pytest.approx(opt_C_Q, rel=1e-3, abs=1e-1)
 
 
     

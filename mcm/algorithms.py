@@ -3,6 +3,8 @@ import cvxpy as cp
 import numpy as np
 import  logging
 
+from mcm.network_optimization import I_C_Q, optimize_app_phy, proportional_fair
+
 LOGGER = logging.getLogger(__name__)
 
 def optimize_primal_sub(A, q_min, q_max, target=None):
@@ -69,23 +71,24 @@ def optimize_primal_sub(A, q_min, q_max, target=None):
 
     return max_util, rates, None
 
+
 def optimize_primal_subgradient_projected(A, q_min, q_max, target=None):
 
     rates = q_min
     n_users, n_schedules = A.shape
+    step_size = 1
     max_util = sum(np.log(rates))
     for n in range(1000):
         LOGGER.info(f"Projected Subgradient: Iteration {n} - Best Primal Value {max_util}")
-        step_size = 1
         subgradient = 1/rates
-        subgradient_projected = cp.Variable(n_users)
+
+        r_l_1 = cp.Variable(n_users)   
         alpha = cp.Variable(n_schedules, nonneg=True)
-        sum_alpha = cp.sum(alpha) <= 1
-        feasible = rates + subgradient_projected == A@alpha
-        constraints =  [feasible, sum_alpha] 
-        prob = cp.Problem(cp.Minimize(cp.sum_squares(subgradient - subgradient_projected)), constraints)
+
+        constraints = [r_l_1 == A@alpha, cp.sum(alpha) <= 1, r_l_1 >= q_min, r_l_1 <= q_max]  
+        prob = cp.Problem(cp.Minimize(cp.sum_squares(r_l_1 - (rates + step_size * subgradient) )), constraints)
         prob.solve()
-        rates = rates + subgradient_projected.value
+        rates = r_l_1.value
         new_util = sum(np.log(rates))
         if target is None and abs(max_util - new_util) < 1e-6:
             break
@@ -97,4 +100,39 @@ def optimize_primal_subgradient_projected(A, q_min, q_max, target=None):
     return max_util, rates, None
 
 
+def optimize_primal_subgradient_rosen(A, q_min, q_max, target=None):
 
+    rates = q_min
+    n_users, n_schedules = A.shape
+    step_size = 1
+    max_util = sum(np.log(rates))
+    for n in range(1000):
+        LOGGER.info(f"Projected Subgradient: Iteration {n} - Best Primal Value {max_util}")
+        subgradient = 1/rates
+
+        p_s = cp.Variable(n_users)   
+        alpha = cp.Variable(n_schedules, nonneg=True)
+        constraints = [rates + p_s == A@alpha, cp.sum(alpha) <= 1, rates + p_s >= q_min, rates + p_s <= q_max]  
+        #prob = cp.Problem(cp.Minimize(cp.sum_squares(r_l_1 - (rates + step_size * subgradient) )), constraints)
+        prob = cp.Problem(cp.Minimize(cp.sum_squares(p_s - subgradient )), constraints)
+        prob.solve()
+        #rates = r_l_1.value
+        rates = rates + step_size * p_s.value
+        new_util = sum(np.log(rates))
+        if target is None and abs(max_util - new_util) < 1e-6:
+            break
+        max_util = max(max_util, new_util)
+        if target is not None:
+            gap = (target - max_util) / abs(target)
+            if gap < 0.0001:
+                break        
+    return max_util, rates, None
+
+
+def optimize_primal_column(A, q_min, q_max, target=None):
+    n_users = A.shape[0]
+    wsr_C_Q = I_C_Q(A, q_min, q_max)
+    opt, r, alpha, _ = optimize_app_phy(proportional_fair, q_min = np.array([0.001] * n_users), q_max = np.array([10] * n_users), wsr_phy=wsr_C_Q)
+  
+
+    return opt, r, alpha

@@ -44,12 +44,14 @@ def I_C_Q(A, q_min, q_max):
     return lambda weights: time_sharing_no_duals(weighted_sum_rate(weights), A, q_min, q_max)
 
 
-def dual_problem_app(util, weights, q_max, q_min):
+def dual_problem_app(util, weights, q_max = None, q_min = None):
     q = cp.Variable(len(q_max))
-    cost_dual = (
-            util(q) - weights @ q
-    )
-    constraints_dual = [q >= q_min, q <= q_max]
+    cost_dual = (util(q) - weights @ q)
+    constraints_dual = []
+    if q_max is not None:        
+        constraints_dual.append(q <= q_max)
+    if q_min is not None:
+        constraints_dual.append(q >= q_min)
     prob_dual = cp.Problem(cp.Maximize(cost_dual), constraints_dual)
     prob_dual.solve(solver=cp.SCS, eps=1e-8)
     return prob_dual.value, q.value
@@ -206,16 +208,10 @@ def optimize_app_phy(util, q_min, q_max, wsr_phy):
 
         approx_value, q, alpha, [weights, w_min, w_max, mu] = time_sharing_cvx(util, A, q_min, q_max)
 
-        import pytest
-        assert 1 / q + w_min - w_max - weights == pytest.approx(np.zeros(len(q)), rel=1e-2, abs=1e-1)
-        # TDODO we need to verify the weights here
-
-        assert all(weights @ (A - q.reshape(len(q), 1)) <= 0.001)
 
         q_app = np.minimum(q_max, np.maximum(q_min, 1 / weights))
         q_app[weights <= 0] = q_max[weights <= 0]
         v_app = sum(np.log(q_app)) - weights @ q_app
-
 
         v_phy, c = wsr_phy(weights)
         A = np.c_[A, c]
@@ -232,7 +228,7 @@ def optimize_app_phy(util, q_min, q_max, wsr_phy):
         LOGGER.info(f"Max_mode: Iteration {n} - Dual Approximation {approx_value} - Dual Value {dual_value}")
         if abs(dual_value - approx_value) < 0.001:
             break
-    return approx_value, q
+    return approx_value, q, alpha, [weights, w_min, w_max, mu]
 
 
 
