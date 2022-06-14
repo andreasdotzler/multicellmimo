@@ -1,0 +1,300 @@
+
+<!DOCTYPE html>
+
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Welcome to Multi-Cell-MIMO’s documentation! &#8212; Multi-Cell-MIMO 0.0.1 documentation</title>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css" />
+    <link rel="stylesheet" type="text/css" href="_static/alabaster.css" />
+    <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
+    <script src="_static/jquery.js"></script>
+    <script src="_static/underscore.js"></script>
+    <script src="_static/doctools.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+   
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+  
+  
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9" />
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <div class="section" id="module-mcm.mimo">
+<span id="welcome-to-multi-cell-mimo-s-documentation"></span><h1>Welcome to Multi-Cell-MIMO’s documentation!<a class="headerlink" href="#module-mcm.mimo" title="Permalink to this headline">¶</a></h1>
+<dl class="py function">
+<dt class="sig sig-object py" id="mcm.mimo.MAC">
+<span class="sig-prename descclassname"><span class="pre">mcm.mimo.</span></span><span class="sig-name descname"><span class="pre">MAC</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">Hs</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Matrix</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">P</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">float</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">weights</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">float</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">Omega</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">Matrix</span><span class="p"><span class="pre">]</span></span></span> <span class="o"><span class="pre">=</span></span> <span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rate_threshold</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">float</span></span> <span class="o"><span class="pre">=</span></span> <span class="default_value"><span class="pre">1e-06</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_iterations</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">float</span></span> <span class="o"><span class="pre">=</span></span> <span class="default_value"><span class="pre">30</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">float</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Matrix</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="_modules/mcm/mimo.html#MAC"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#mcm.mimo.MAC" title="Permalink to this definition">¶</a></dt>
+<dd><p>Optimize uplink transmit covariances.</p>
+<p>Given channel matrices :math:<a href="#id1"><span class="problematic" id="id2">`</span></a>(H_1, ldots, H_K) `</p>
+<div class="math">
+<p><img src="_images/math/457033b7760b41f0074b96fd289ea134bd026576.png" alt="[\Sigma_1, \ldots, \Sigma_K] = \
+\max_{\Sigma_1,\ldots,\Sigma} \lbrace \sum_{k \in K} w_k r_k(\Sigma_1,\ldots,\Sigma_k): \
+\sum_{k\in K} \tr(\Sigma_k) &lt; P, \
+\Sigma_k in \geq 0 \forall k \in K \rbrace"/></p>
+</div><dl class="simple">
+<dt>Hs: List[Matrix]</dt><dd><p>Channel Matrices</p>
+</dd>
+<dt>P: float</dt><dd><p>Transmit power constraint</p>
+</dd>
+<dt>weights: List[float]</dt><dd><p>User weights</p>
+</dd>
+<dt>Omega: Optional[Matrix]</dt><dd><p>Uplink noise covariance</p>
+</dd>
+<dt>rate_threshold: float</dt><dd><p>Threshold for rate change to continue optimization</p>
+</dd>
+<dt>max_iterations: float</dt><dd><p>Limit on the numnber of iterations</p>
+</dd>
+</dl>
+<dl class="simple">
+<dt>rates: List[float]</dt><dd><p>User rates</p>
+</dd>
+<dt>MAC_Covs: List[Matrices]</dt><dd><p>Transmit covariances</p>
+</dd>
+<dt>order: List[int]</dt><dd><p>Decodicng order</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="mcm.mimo.MACtoBCtransformation">
+<span class="sig-prename descclassname"><span class="pre">mcm.mimo.</span></span><span class="sig-name descname"><span class="pre">MACtoBCtransformation</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">Hs</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Matrix</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">MAC_Covs</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Matrix</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">MAC_decoding_order</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Matrix</span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="_modules/mcm/mimo.html#MACtoBCtransformation"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#mcm.mimo.MACtoBCtransformation" title="Permalink to this definition">¶</a></dt>
+<dd><p>Hs
+MAC_Covs
+MAC_decoding_order</p>
+<p>BC_Covs</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="mcm.mimo.project_covariance_cvx">
+<span class="sig-prename descclassname"><span class="pre">mcm.mimo.</span></span><span class="sig-name descname"><span class="pre">project_covariance_cvx</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">Xs</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Matrix</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">P</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">float</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Matrix</span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="_modules/mcm/mimo.html#project_covariance_cvx"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#mcm.mimo.project_covariance_cvx" title="Permalink to this definition">¶</a></dt>
+<dd><p>Projects covariance matrices to power constraint.</p>
+<p>Implements the optimization of <code class="xref py py-func docutils literal notranslate"><span class="pre">project_convariances()</span></code> in CVX.</p>
+<p>Xs
+P</p>
+<p>projected_Covs</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="mcm.mimo.project_covariances">
+<span class="sig-prename descclassname"><span class="pre">mcm.mimo.</span></span><span class="sig-name descname"><span class="pre">project_covariances</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">Covs</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Matrix</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">P</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">float</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Matrix</span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="_modules/mcm/mimo.html#project_covariances"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#mcm.mimo.project_covariances" title="Permalink to this definition">¶</a></dt>
+<dd><p>Projects covariance matrices to power constraint..</p>
+<div class="math">
+<p><img src="_images/math/fdb9de87dba2bab1583c140c51e7594357ca8d9d.png" alt="\min_{\Omega} \lbrace \sum_{k \in K} \norm{C_k-X_k}_{F}^{2} : \sum_{k \in K}\tr(C_k) \leq P, C_k \geq 0 \forall k \in K \rbrace"/></p>
+</div><dl class="simple">
+<dt>Covs</dt><dd><p>Covariances to be projected</p>
+</dd>
+<dt>P</dt><dd><p>Target power constraint</p>
+</dd>
+</dl>
+<dl class="simple">
+<dt>List[Matrix]</dt><dd><p>Projected Covariances</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="mcm.mimo.project_eigenvalues_to_given_sum">
+<span class="sig-prename descclassname"><span class="pre">mcm.mimo.</span></span><span class="sig-name descname"><span class="pre">project_eigenvalues_to_given_sum</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">eis</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">float</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">P</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">float</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">float</span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="_modules/mcm/mimo.html#project_eigenvalues_to_given_sum"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#mcm.mimo.project_eigenvalues_to_given_sum" title="Permalink to this definition">¶</a></dt>
+<dd><p>eis
+P</p>
+<p>projected_eis</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="mcm.mimo.sort_channels">
+<span class="sig-prename descclassname"><span class="pre">mcm.mimo.</span></span><span class="sig-name descname"><span class="pre">sort_channels</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">Hs</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Matrix</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">weights</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">float</span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Matrix</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">float</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="_modules/mcm/mimo.html#sort_channels"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#mcm.mimo.sort_channels" title="Permalink to this definition">¶</a></dt>
+<dd><p>Hs
+weights</p>
+<p>Hs
+alphas
+order</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="mcm.mimo.water_filling">
+<span class="sig-prename descclassname"><span class="pre">mcm.mimo.</span></span><span class="sig-name descname"><span class="pre">water_filling</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">ei</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">float</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">P</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">float</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">float</span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="_modules/mcm/mimo.html#water_filling"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#mcm.mimo.water_filling" title="Permalink to this definition">¶</a></dt>
+<dd><p>ei
+P</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="mcm.mimo.water_filling_cvx">
+<span class="sig-prename descclassname"><span class="pre">mcm.mimo.</span></span><span class="sig-name descname"><span class="pre">water_filling_cvx</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">ei</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">float</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">P</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">float</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">float</span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="_modules/mcm/mimo.html#water_filling_cvx"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#mcm.mimo.water_filling_cvx" title="Permalink to this definition">¶</a></dt>
+<dd><p>ei
+P</p>
+<p>projected_ei</p>
+</dd></dl>
+
+<span class="target" id="module-mcm.mimo_worst_case_noise"></span><dl class="py function">
+<dt class="sig sig-object py" id="mcm.mimo_worst_case_noise.MAC_worst_case_noise_approx">
+<span class="sig-prename descclassname"><span class="pre">mcm.mimo_worst_case_noise.</span></span><span class="sig-name descname"><span class="pre">MAC_worst_case_noise_approx</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">Hs</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Matrix</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">P</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">float</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sigma</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">float</span></span> <span class="o"><span class="pre">=</span></span> <span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">weights</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">float</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span> <span class="o"><span class="pre">=</span></span> <span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">precision</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">float</span></span> <span class="o"><span class="pre">=</span></span> <span class="default_value"><span class="pre">0.01</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">float</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span> </span><span class="pre">Matrix</span><span class="p"><span class="pre">,</span> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Matrix</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="_modules/mcm/mimo_worst_case_noise.html#MAC_worst_case_noise_approx"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#mcm.mimo_worst_case_noise.MAC_worst_case_noise_approx" title="Permalink to this definition">¶</a></dt>
+<dd><p>Hs
+P
+sigma
+weights
+precision</p>
+<p>rates_i
+Omega
+Covs
+order</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="mcm.mimo_worst_case_noise.approx_inner_ptp">
+<span class="sig-prename descclassname"><span class="pre">mcm.mimo_worst_case_noise.</span></span><span class="sig-name descname"><span class="pre">approx_inner_ptp</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">H</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">Matrix</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">Z</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">Matrix</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">P</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">float</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">float</span><span class="p"><span class="pre">,</span> </span><span class="pre">Matrix</span><span class="p"><span class="pre">,</span> </span><span class="pre">Matrix</span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="_modules/mcm/mimo_worst_case_noise.html#approx_inner_ptp"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#mcm.mimo_worst_case_noise.approx_inner_ptp" title="Permalink to this definition">¶</a></dt>
+<dd><p>H
+Z
+P</p>
+<p>rate_i
+Z_gr
+Sigma</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="mcm.mimo_worst_case_noise.inf_cons">
+<span class="sig-prename descclassname"><span class="pre">mcm.mimo_worst_case_noise.</span></span><span class="sig-name descname"><span class="pre">inf_cons</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">H</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">Matrix</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">P</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">float</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rate</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">float</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Matrix</span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="_modules/mcm/mimo_worst_case_noise.html#inf_cons"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#mcm.mimo_worst_case_noise.inf_cons" title="Permalink to this definition">¶</a></dt>
+<dd><p>Find constraints on the worst-case uplink noise for a user</p>
+<dl class="simple">
+<dt>H</dt><dd><p>Channel matrix.</p>
+</dd>
+<dt>P</dt><dd><p>Transmit power</p>
+</dd>
+<dt>rate</dt><dd><p>Maximal rate</p>
+</dd>
+</dl>
+<dl class="simple">
+<dt>Is</dt><dd><p>TODO constrainst to be used as …</p>
+</dd>
+</dl>
+<p>Given a feasible uplink covariance we compute a set of matrices Is
+such that U = V
+<img class="math" src="_images/math/baa413c00212f057597e4e041a2f1ac9187ca65e.png" alt="a^2 + b^2 = c^2"/>.</p>
+<div class="math">
+<p><img src="_images/math/39328f64693bc608d9eda09d76f74437dc9c56ae.png" alt="U = \min_{\Omega} \lbrace \max_{\Sigma} \lbrace \log\det(I + \Omega^{-1} H^H \Sigma H): tr(\Sigma) &lt; P : \Omega in \Omega, \Omega \geq Is \forall I in Is \rbrace \rbrace"/></p>
+</div><p>V = min_Omega max_Sigma logdet(I + inv(Omega) &#64; H.conj().T &#64; Sigma &#64; H): tr(Sigma) &lt; P : Omega in Omegas 
+r = max_Sigma logdet(I + inv(Omega_p) &#64; H.conj().T &#64; Sigma &#64; H): tr(Sigma) &lt; P</p>
+<p>we know u &lt;= r</p>
+<p>We select the constrainst, such that the noise power in each mode of the channel is large enough that if we put all transmit power into that mode, the resulting rate is r. This guarantees a finite worst case rates when solving U instead of V.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="mcm.mimo_worst_case_noise.ptp_capacity_minimax">
+<span class="sig-prename descclassname"><span class="pre">mcm.mimo_worst_case_noise.</span></span><span class="sig-name descname"><span class="pre">ptp_capacity_minimax</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">H</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">Matrix</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">R</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">Matrix</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">C</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">Matrix</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">Zs</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Matrix</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">eps</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">float</span></span> <span class="o"><span class="pre">=</span></span> <span class="default_value"><span class="pre">0.001</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">object</span></span></span><a class="reference internal" href="_modules/mcm/mimo_worst_case_noise.html#ptp_capacity_minimax"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#mcm.mimo_worst_case_noise.ptp_capacity_minimax" title="Permalink to this definition">¶</a></dt>
+<dd><p>Hello he</p>
+<p>H
+R
+C
+Zs
+eps</p>
+<p>float</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="mcm.mimo_worst_case_noise.ptp_worst_case_noise_approx">
+<span class="sig-prename descclassname"><span class="pre">mcm.mimo_worst_case_noise.</span></span><span class="sig-name descname"><span class="pre">ptp_worst_case_noise_approx</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">H</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">Matrix</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">P</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">float</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sigma</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">float</span></span> <span class="o"><span class="pre">=</span></span> <span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">precision</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">float</span></span> <span class="o"><span class="pre">=</span></span> <span class="default_value"><span class="pre">0.01</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">float</span><span class="p"><span class="pre">,</span> </span><span class="pre">Matrix</span><span class="p"><span class="pre">,</span> </span><span class="pre">Matrix</span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="_modules/mcm/mimo_worst_case_noise.html#ptp_worst_case_noise_approx"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#mcm.mimo_worst_case_noise.ptp_worst_case_noise_approx" title="Permalink to this definition">¶</a></dt>
+<dd><p>H
+P
+sigma
+precision</p>
+<p>rate_i
+Z
+Q</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="mcm.mimo_worst_case_noise.ptp_worst_case_noise_static">
+<span class="sig-prename descclassname"><span class="pre">mcm.mimo_worst_case_noise.</span></span><span class="sig-name descname"><span class="pre">ptp_worst_case_noise_static</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">HQHT</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">Matrix</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sigma</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">float</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">precision</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">float</span></span> <span class="o"><span class="pre">=</span></span> <span class="default_value"><span class="pre">0.01</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">float</span><span class="p"><span class="pre">,</span> </span><span class="pre">Matrix</span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="_modules/mcm/mimo_worst_case_noise.html#ptp_worst_case_noise_static"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#mcm.mimo_worst_case_noise.ptp_worst_case_noise_static" title="Permalink to this definition">¶</a></dt>
+<dd><p>HQHT
+sigma
+precision</p>
+<p>rate_i
+Z</p>
+</dd></dl>
+
+<div class="toctree-wrapper compound">
+</div>
+</div>
+<div class="section" id="indices-and-tables">
+<h1>Indices and tables<a class="headerlink" href="#indices-and-tables" title="Permalink to this headline">¶</a></h1>
+<ul class="simple">
+<li><p><a class="reference internal" href="genindex.html"><span class="std std-ref">Index</span></a></p></li>
+<li><p><a class="reference internal" href="py-modindex.html"><span class="std std-ref">Module Index</span></a></p></li>
+<li><p><a class="reference internal" href="search.html"><span class="std std-ref">Search Page</span></a></p></li>
+</ul>
+</div>
+
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="#">Multi-Cell-MIMO</a></h1>
+
+
+
+
+
+
+
+
+<h3>Navigation</h3>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="#">Documentation overview</a><ul>
+  </ul></li>
+</ul>
+</div>
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>$('#searchbox').show(0);</script>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &copy;2021, Andreas Dotzler.
+      
+      |
+      Powered by <a href="http://sphinx-doc.org/">Sphinx 4.1.2</a>
+      &amp; <a href="https://github.com/bitprophet/alabaster">Alabaster 0.7.12</a>
+      
+      |
+      <a href="_sources/index.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>

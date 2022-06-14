@@ -66,8 +66,7 @@ def ptp_capacity_minimax(
     Zsubspace = Z == Z_equal
     positivity = Q >> 0
     constraints = [shape, Zsubspace, positivity]
-    prob = cp.Problem(cp.Maximize(cost), constraints)
-    prob.solve(solver=cp.SCS, eps=eps, max_iters=100000)
+
     # prob.solve()
     # prob.solve(solver=cp.SCS, warm_start=True, max_iters=1000)
     assert prob.status == "optimal"

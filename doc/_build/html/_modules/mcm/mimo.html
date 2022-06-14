@@ -1,0 +1,611 @@
+
+<!DOCTYPE html>
+
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>mcm.mimo &#8212; Multi-Cell-MIMO 0.0.1 documentation</title>
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css" />
+    <link rel="stylesheet" type="text/css" href="../../_static/alabaster.css" />
+    <script data-url_root="../../" id="documentation_options" src="../../_static/documentation_options.js"></script>
+    <script src="../../_static/jquery.js"></script>
+    <script src="../../_static/underscore.js"></script>
+    <script src="../../_static/doctools.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+   
+  <link rel="stylesheet" href="../../_static/custom.css" type="text/css" />
+  
+  
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9" />
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <h1>Source code for mcm.mimo</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span> <span class="nn">logging</span>
+<span class="kn">import</span> <span class="nn">math</span>
+<span class="kn">import</span> <span class="nn">pytest</span>
+
+<span class="kn">import</span> <span class="nn">cvxpy</span> <span class="k">as</span> <span class="nn">cp</span>
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">List</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">,</span> <span class="n">Optional</span>
+<span class="kn">from</span> <span class="nn">.utils</span> <span class="kn">import</span> <span class="n">inv_sqrtm</span><span class="p">,</span> <span class="n">sqrtm</span><span class="p">,</span> <span class="n">logdet</span><span class="p">,</span> <span class="n">inv</span><span class="p">,</span> <span class="n">log</span><span class="p">,</span> <span class="n">pinv</span><span class="p">,</span> <span class="n">argsort</span>
+<span class="kn">from</span> <span class="nn">.typing</span> <span class="kn">import</span> <span class="n">Matrix</span>
+
+<span class="n">LOGGER</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="water_filling_cvx"><a class="viewcode-back" href="../../index.html#mcm.mimo.water_filling_cvx">[docs]</a><span class="k">def</span> <span class="nf">water_filling_cvx</span><span class="p">(</span><span class="n">ei</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">float</span><span class="p">],</span> <span class="n">P</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">float</span><span class="p">]:</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    ei</span>
+<span class="sd">    P</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    projected_ei</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">assert</span> <span class="nb">all</span><span class="p">([</span><span class="n">e</span><span class="o">.</span><span class="n">imag</span> <span class="o">==</span> <span class="mi">0</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">ei</span><span class="p">])</span>
+    <span class="n">power</span> <span class="o">=</span> <span class="n">cp</span><span class="o">.</span><span class="n">Variable</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">ei</span><span class="p">))</span>
+    <span class="n">alpha</span> <span class="o">=</span> <span class="n">cp</span><span class="o">.</span><span class="n">Parameter</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">ei</span><span class="p">),</span> <span class="n">nonneg</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">alpha</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="n">ei</span>
+    <span class="n">obj</span> <span class="o">=</span> <span class="n">cp</span><span class="o">.</span><span class="n">Maximize</span><span class="p">(</span><span class="n">cp</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">cp</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="mi">1</span> <span class="o">+</span> <span class="n">cp</span><span class="o">.</span><span class="n">multiply</span><span class="p">(</span><span class="n">power</span><span class="p">,</span> <span class="n">alpha</span><span class="p">))))</span>
+    <span class="n">constraints</span> <span class="o">=</span> <span class="p">[</span><span class="n">power</span> <span class="o">&gt;=</span> <span class="mi">0</span><span class="p">,</span> <span class="n">cp</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">power</span><span class="p">)</span> <span class="o">==</span> <span class="n">P</span><span class="p">]</span>
+    <span class="n">prob</span> <span class="o">=</span> <span class="n">cp</span><span class="o">.</span><span class="n">Problem</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="n">constraints</span><span class="p">)</span>
+    <span class="n">prob</span><span class="o">.</span><span class="n">solve</span><span class="p">(</span><span class="n">solver</span><span class="o">=</span><span class="n">cp</span><span class="o">.</span><span class="n">SCS</span><span class="p">,</span> <span class="n">eps</span><span class="o">=</span><span class="mf">1e-9</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">power</span><span class="o">.</span><span class="n">value</span></div>
+
+
+<div class="viewcode-block" id="water_filling"><a class="viewcode-back" href="../../index.html#mcm.mimo.water_filling">[docs]</a><span class="k">def</span> <span class="nf">water_filling</span><span class="p">(</span><span class="n">ei</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">float</span><span class="p">],</span> <span class="n">P</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">float</span><span class="p">]:</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    ei</span>
+<span class="sd">    P</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">assert</span> <span class="nb">all</span><span class="p">([</span><span class="n">e</span><span class="o">.</span><span class="n">imag</span> <span class="o">==</span> <span class="mi">0</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">ei</span><span class="p">])</span>
+    <span class="n">channel_gains</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">ei</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">double</span><span class="p">)</span>
+    <span class="n">nonzero_index</span> <span class="o">=</span> <span class="n">channel_gains</span> <span class="o">&gt;=</span> <span class="mf">10e-16</span>
+    <span class="n">powers_aux</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">channel_gains</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">double</span><span class="p">)</span>
+    <span class="n">powers</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">channel_gains</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">double</span><span class="p">)</span>
+    <span class="k">while</span> <span class="nb">any</span><span class="p">(</span><span class="n">powers_aux</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">):</span>
+        <span class="n">channel_gains_aux</span> <span class="o">=</span> <span class="n">channel_gains</span><span class="p">[</span><span class="n">nonzero_index</span><span class="p">]</span>
+        <span class="n">eta</span> <span class="o">=</span> <span class="p">(</span><span class="n">P</span> <span class="o">+</span> <span class="nb">sum</span><span class="p">(</span><span class="mi">1</span> <span class="o">/</span> <span class="n">channel_gains_aux</span><span class="p">))</span> <span class="o">/</span> <span class="nb">sum</span><span class="p">(</span><span class="n">nonzero_index</span><span class="p">)</span>
+        <span class="n">powers_aux</span> <span class="o">=</span> <span class="n">eta</span> <span class="o">-</span> <span class="p">(</span><span class="mi">1</span> <span class="o">/</span> <span class="n">channel_gains_aux</span><span class="p">)</span>
+        <span class="n">powers</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">channel_gains</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">double</span><span class="p">)</span>
+        <span class="n">powers</span><span class="p">[</span><span class="n">nonzero_index</span><span class="p">]</span> <span class="o">=</span> <span class="n">powers_aux</span>
+        <span class="n">i</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">argmin</span><span class="p">(</span><span class="n">powers</span><span class="p">)</span>
+        <span class="n">nonzero_index</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="k">return</span> <span class="n">powers</span><span class="p">[</span><span class="n">powers</span> <span class="o">&gt;=</span> <span class="mi">0</span><span class="p">]</span></div>
+
+
+<div class="viewcode-block" id="MACtoBCtransformation"><a class="viewcode-back" href="../../index.html#mcm.mimo.MACtoBCtransformation">[docs]</a><span class="k">def</span> <span class="nf">MACtoBCtransformation</span><span class="p">(</span>
+    <span class="n">Hs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Matrix</span><span class="p">],</span> <span class="n">MAC_Covs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Matrix</span><span class="p">],</span> <span class="n">MAC_decoding_order</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Matrix</span><span class="p">]:</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    Hs</span>
+<span class="sd">    MAC_Covs</span>
+<span class="sd">    MAC_decoding_order</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    BC_Covs</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">BS_antennas</span> <span class="o">=</span> <span class="n">Hs</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+    <span class="n">BC_Covs</span> <span class="o">=</span> <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">([</span><span class="n">BS_antennas</span><span class="p">,</span> <span class="n">BS_antennas</span><span class="p">])</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">Hs</span><span class="p">]</span>
+    <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">ms</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">MAC_decoding_order</span><span class="p">):</span>
+        <span class="n">H</span> <span class="o">=</span> <span class="n">Hs</span><span class="p">[</span><span class="n">ms</span><span class="p">]</span>
+        <span class="n">MS_antennas</span> <span class="o">=</span> <span class="n">H</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+        <span class="c1"># Compute A</span>
+        <span class="n">temp_sum</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">eye</span><span class="p">(</span><span class="n">MS_antennas</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">BC_Cov</span> <span class="ow">in</span> <span class="n">BC_Covs</span><span class="p">:</span>
+            <span class="n">temp_sum</span> <span class="o">=</span> <span class="n">temp_sum</span> <span class="o">+</span> <span class="n">Hs</span><span class="p">[</span><span class="n">ms</span><span class="p">]</span> <span class="o">@</span> <span class="n">BC_Cov</span> <span class="o">@</span> <span class="n">Hs</span><span class="p">[</span><span class="n">ms</span><span class="p">]</span><span class="o">.</span><span class="n">conj</span><span class="p">()</span><span class="o">.</span><span class="n">T</span>
+        <span class="n">A</span> <span class="o">=</span> <span class="n">temp_sum</span>
+
+        <span class="c1"># Compute B</span>
+        <span class="n">temp_sum</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">eye</span><span class="p">(</span><span class="n">BS_antennas</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="n">MAC_decoding_order</span><span class="p">[</span><span class="n">k</span> <span class="o">+</span> <span class="mi">1</span> <span class="p">:]:</span>
+            <span class="n">temp_sum</span> <span class="o">=</span> <span class="n">temp_sum</span> <span class="o">+</span> <span class="n">Hs</span><span class="p">[</span><span class="n">j</span><span class="p">]</span><span class="o">.</span><span class="n">conj</span><span class="p">()</span><span class="o">.</span><span class="n">T</span> <span class="o">@</span> <span class="n">MAC_Covs</span><span class="p">[</span><span class="n">j</span><span class="p">]</span> <span class="o">@</span> <span class="n">Hs</span><span class="p">[</span><span class="n">j</span><span class="p">]</span>
+        <span class="n">B</span> <span class="o">=</span> <span class="n">temp_sum</span>
+
+        <span class="c1"># Take SVD of effective channel</span>
+        <span class="n">Hms_eff</span> <span class="o">=</span> <span class="n">inv_sqrtm</span><span class="p">(</span><span class="n">B</span><span class="p">)</span> <span class="o">@</span> <span class="n">Hs</span><span class="p">[</span><span class="n">ms</span><span class="p">]</span><span class="o">.</span><span class="n">conj</span><span class="p">()</span><span class="o">.</span><span class="n">T</span> <span class="o">@</span> <span class="n">inv_sqrtm</span><span class="p">(</span><span class="n">A</span><span class="p">)</span>
+        <span class="n">F</span><span class="p">,</span> <span class="n">D</span><span class="p">,</span> <span class="n">GH</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">svd</span><span class="p">(</span><span class="n">Hms_eff</span><span class="p">)</span>
+        <span class="n">Fms</span> <span class="o">=</span> <span class="n">F</span><span class="p">[:,</span> <span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">D</span><span class="p">)]</span>
+        <span class="n">Gms</span> <span class="o">=</span> <span class="n">GH</span><span class="p">[:</span> <span class="nb">len</span><span class="p">(</span><span class="n">D</span><span class="p">),</span> <span class="p">:]</span><span class="o">.</span><span class="n">conj</span><span class="p">()</span><span class="o">.</span><span class="n">T</span>
+        <span class="n">np</span><span class="o">.</span><span class="n">testing</span><span class="o">.</span><span class="n">assert_almost_equal</span><span class="p">(</span><span class="n">Hms_eff</span><span class="p">,</span> <span class="n">Fms</span> <span class="o">@</span> <span class="n">np</span><span class="o">.</span><span class="n">diag</span><span class="p">(</span><span class="n">D</span><span class="p">)</span> <span class="o">@</span> <span class="n">Gms</span><span class="o">.</span><span class="n">conj</span><span class="p">()</span><span class="o">.</span><span class="n">T</span><span class="p">)</span>
+        <span class="c1"># Compute downlink covariance (equation 35)</span>
+        <span class="n">BC_Cov</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">inv_sqrtm</span><span class="p">(</span><span class="n">B</span><span class="p">)</span>
+            <span class="o">@</span> <span class="n">Fms</span>
+            <span class="o">@</span> <span class="n">Gms</span><span class="o">.</span><span class="n">conj</span><span class="p">()</span><span class="o">.</span><span class="n">T</span>
+            <span class="o">@</span> <span class="n">sqrtm</span><span class="p">(</span><span class="n">A</span><span class="p">)</span>
+            <span class="o">@</span> <span class="n">MAC_Covs</span><span class="p">[</span><span class="n">ms</span><span class="p">]</span>
+            <span class="o">@</span> <span class="n">sqrtm</span><span class="p">(</span><span class="n">A</span><span class="p">)</span>
+            <span class="o">@</span> <span class="n">Gms</span>
+            <span class="o">@</span> <span class="n">Fms</span><span class="o">.</span><span class="n">conj</span><span class="p">()</span><span class="o">.</span><span class="n">T</span>
+            <span class="o">@</span> <span class="n">inv_sqrtm</span><span class="p">(</span><span class="n">B</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="n">BC_Covs</span><span class="p">[</span><span class="n">ms</span><span class="p">]</span> <span class="o">=</span> <span class="n">BC_Cov</span>
+    <span class="k">return</span> <span class="n">BC_Covs</span></div>
+
+
+<span class="k">def</span> <span class="nf">ptp_capacity_cvx</span><span class="p">(</span><span class="n">H</span><span class="p">:</span> <span class="n">Matrix</span><span class="p">,</span> <span class="n">P</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">Z</span><span class="p">:</span> <span class="n">Matrix</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="n">Matrix</span><span class="p">]:</span>
+    <span class="n">Nrx</span><span class="p">,</span> <span class="n">Ntx</span> <span class="o">=</span> <span class="n">H</span><span class="o">.</span><span class="n">shape</span>
+    <span class="n">Cov</span> <span class="o">=</span> <span class="n">cp</span><span class="o">.</span><span class="n">Variable</span><span class="p">((</span><span class="n">Ntx</span><span class="p">,</span> <span class="n">Ntx</span><span class="p">),</span> <span class="n">hermitian</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">I</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">eye</span><span class="p">(</span><span class="n">Ntx</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">Z</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">cost</span> <span class="o">=</span> <span class="n">cp</span><span class="o">.</span><span class="n">log_det</span><span class="p">(</span><span class="n">I</span> <span class="o">+</span> <span class="n">Cov</span> <span class="o">@</span> <span class="n">H</span><span class="o">.</span><span class="n">conj</span><span class="p">()</span><span class="o">.</span><span class="n">T</span> <span class="o">@</span> <span class="n">H</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">assert</span> <span class="p">(</span><span class="n">Nrx</span><span class="p">,</span> <span class="n">Nrx</span><span class="p">)</span> <span class="o">==</span> <span class="n">Z</span><span class="o">.</span><span class="n">shape</span>
+        <span class="n">cost</span> <span class="o">=</span> <span class="n">cp</span><span class="o">.</span><span class="n">log_det</span><span class="p">(</span><span class="n">I</span> <span class="o">+</span> <span class="n">Cov</span> <span class="o">@</span> <span class="n">H</span><span class="o">.</span><span class="n">conj</span><span class="p">()</span><span class="o">.</span><span class="n">T</span> <span class="o">@</span> <span class="n">inv</span><span class="p">(</span><span class="n">Z</span><span class="p">)</span> <span class="o">@</span> <span class="n">H</span><span class="p">)</span>
+    <span class="n">power</span> <span class="o">=</span> <span class="n">cp</span><span class="o">.</span><span class="n">real</span><span class="p">(</span><span class="n">cp</span><span class="o">.</span><span class="n">trace</span><span class="p">(</span><span class="n">Cov</span><span class="p">))</span> <span class="o">&lt;=</span> <span class="n">P</span>
+    <span class="n">positivity</span> <span class="o">=</span> <span class="n">Cov</span> <span class="o">&gt;&gt;</span> <span class="mi">0</span>
+    <span class="n">constraints</span> <span class="o">=</span> <span class="p">[</span><span class="n">power</span><span class="p">,</span> <span class="n">positivity</span><span class="p">]</span>
+    <span class="n">prob</span> <span class="o">=</span> <span class="n">cp</span><span class="o">.</span><span class="n">Problem</span><span class="p">(</span><span class="n">cp</span><span class="o">.</span><span class="n">Maximize</span><span class="p">(</span><span class="n">cost</span><span class="p">),</span> <span class="n">constraints</span><span class="p">)</span>
+    <span class="n">prob</span><span class="o">.</span><span class="n">solve</span><span class="p">(</span><span class="n">solver</span><span class="o">=</span><span class="n">cp</span><span class="o">.</span><span class="n">SCS</span><span class="p">,</span> <span class="n">eps</span><span class="o">=</span><span class="mf">1e-9</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">prob</span><span class="o">.</span><span class="n">value</span><span class="p">,</span> <span class="n">Cov</span><span class="o">.</span><span class="n">value</span>
+
+
+<span class="k">def</span> <span class="nf">ptp_capacity</span><span class="p">(</span><span class="n">H</span><span class="p">,</span> <span class="n">P</span><span class="p">,</span> <span class="n">Z</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">rcond</span><span class="o">=</span><span class="mf">1e-6</span><span class="p">):</span>
+    <span class="k">if</span> <span class="n">Z</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">HH_d</span> <span class="o">=</span> <span class="n">H</span><span class="o">.</span><span class="n">conj</span><span class="p">()</span><span class="o">.</span><span class="n">T</span> <span class="o">@</span> <span class="n">H</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">HH_d</span> <span class="o">=</span> <span class="n">H</span><span class="o">.</span><span class="n">conj</span><span class="p">()</span><span class="o">.</span><span class="n">T</span> <span class="o">@</span> <span class="n">pinv</span><span class="p">(</span><span class="n">Z</span><span class="p">,</span> <span class="n">rcond</span><span class="p">,</span> <span class="n">hermitian</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span> <span class="o">@</span> <span class="n">H</span>
+    <span class="n">ei_d</span><span class="p">,</span> <span class="n">V_d</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">eigh</span><span class="p">(</span><span class="n">HH_d</span><span class="p">)</span>
+    <span class="n">ei_d</span> <span class="o">=</span> <span class="p">[</span><span class="nb">max</span><span class="p">(</span><span class="n">e</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">ei_d</span><span class="p">]</span>
+    <span class="n">power</span> <span class="o">=</span> <span class="n">water_filling</span><span class="p">(</span><span class="n">ei_d</span><span class="p">,</span> <span class="n">P</span><span class="p">)</span>
+    <span class="n">Cov</span> <span class="o">=</span> <span class="n">V_d</span> <span class="o">@</span> <span class="n">np</span><span class="o">.</span><span class="n">diag</span><span class="p">(</span><span class="n">power</span><span class="p">)</span> <span class="o">@</span> <span class="n">V_d</span><span class="o">.</span><span class="n">conj</span><span class="p">()</span><span class="o">.</span><span class="n">T</span>
+    <span class="n">rate</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">math</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="mi">1</span> <span class="o">+</span> <span class="n">p</span> <span class="o">*</span> <span class="n">e</span><span class="p">)</span> <span class="k">for</span> <span class="n">p</span><span class="p">,</span> <span class="n">e</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">power</span><span class="p">,</span> <span class="n">ei_d</span><span class="p">))</span>
+    <span class="c1"># TODO should return Uplink and Downlink covariance</span>
+    <span class="k">return</span> <span class="n">rate</span><span class="p">,</span> <span class="n">Cov</span>
+
+
+<div class="viewcode-block" id="sort_channels"><a class="viewcode-back" href="../../index.html#mcm.mimo.sort_channels">[docs]</a><span class="k">def</span> <span class="nf">sort_channels</span><span class="p">(</span>
+    <span class="n">Hs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Matrix</span><span class="p">],</span> <span class="n">weights</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">Matrix</span><span class="p">],</span> <span class="n">List</span><span class="p">[</span><span class="nb">float</span><span class="p">],</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]]:</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    Hs</span>
+<span class="sd">    weights</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    Hs</span>
+<span class="sd">    alphas</span>
+<span class="sd">    order</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">order</span> <span class="o">=</span> <span class="n">argsort</span><span class="p">(</span><span class="n">weights</span><span class="p">)</span>
+    <span class="n">Hs</span> <span class="o">=</span> <span class="p">[</span><span class="n">Hs</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">order</span><span class="p">[::</span><span class="o">-</span><span class="mi">1</span><span class="p">]]</span>
+    <span class="n">weights_reverse</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">weights</span><span class="p">,</span> <span class="n">reverse</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">alphas</span> <span class="o">=</span> <span class="p">[</span><span class="n">a</span> <span class="o">-</span> <span class="n">b</span> <span class="k">for</span> <span class="n">a</span><span class="p">,</span> <span class="n">b</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">weights_reverse</span><span class="p">,</span> <span class="n">weights_reverse</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span> <span class="o">+</span> <span class="p">[</span><span class="mi">0</span><span class="p">])]</span>
+    <span class="k">return</span> <span class="n">Hs</span><span class="p">,</span> <span class="n">alphas</span><span class="p">,</span> <span class="n">order</span></div>
+
+
+<span class="k">def</span> <span class="nf">MAC_cvx</span><span class="p">(</span><span class="n">Hs</span><span class="p">,</span> <span class="n">P</span><span class="p">,</span> <span class="n">weights</span><span class="p">,</span> <span class="n">Omega</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="n">rates</span><span class="p">,</span> <span class="n">MAC_Covs</span><span class="p">,</span> <span class="n">order</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">MAC_cvx_with_noise_sbgr</span><span class="p">(</span><span class="n">Hs</span><span class="p">,</span> <span class="n">P</span><span class="p">,</span> <span class="n">weights</span><span class="p">,</span> <span class="n">Omega</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">rates</span><span class="p">,</span> <span class="n">MAC_Covs</span><span class="p">,</span> <span class="n">order</span>
+
+
+<span class="k">def</span> <span class="nf">MAC_cvx_with_noise_sbgr</span><span class="p">(</span><span class="n">Hs</span><span class="p">,</span> <span class="n">P</span><span class="p">,</span> <span class="n">weights</span><span class="p">,</span> <span class="n">Omega</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="c1"># TODO, this function does not handle a rank deficient noise very well</span>
+    <span class="n">MAC_Covs</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">Xs</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">Hs_sorted</span><span class="p">,</span> <span class="n">alphas</span><span class="p">,</span> <span class="n">order</span> <span class="o">=</span> <span class="n">sort_channels</span><span class="p">(</span><span class="n">Hs</span><span class="p">,</span> <span class="n">weights</span><span class="p">)</span>
+    <span class="n">Hs_sorted_orig</span> <span class="o">=</span> <span class="n">Hs_sorted</span>
+    <span class="n">Nrx</span> <span class="o">=</span> <span class="n">Hs</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">Omega</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">eye</span><span class="p">(</span><span class="n">Nrx</span><span class="p">)</span> <span class="k">if</span> <span class="n">Omega</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">Omega</span>
+    <span class="n">ei_O</span><span class="p">,</span> <span class="n">V_O</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">eigh</span><span class="p">(</span><span class="n">Omega</span><span class="p">)</span>
+    <span class="n">above_cutoff</span> <span class="o">=</span> <span class="n">ei_O</span> <span class="o">&gt;</span> <span class="mf">1e-3</span>
+    <span class="n">psigma_diag</span> <span class="o">=</span> <span class="n">ei_O</span><span class="p">[</span><span class="n">above_cutoff</span><span class="p">]</span> <span class="o">**</span> <span class="o">-</span><span class="mf">0.5</span>
+    <span class="n">V_u</span> <span class="o">=</span> <span class="n">V_O</span><span class="p">[:,</span> <span class="n">above_cutoff</span><span class="p">]</span>
+
+    <span class="n">Hs_sorted_pinv</span> <span class="o">=</span> <span class="p">[(</span><span class="n">psigma_diag</span> <span class="o">*</span> <span class="n">V_u</span><span class="p">)</span><span class="o">.</span><span class="n">conj</span><span class="p">()</span><span class="o">.</span><span class="n">T</span> <span class="o">@</span> <span class="n">H</span> <span class="k">for</span> <span class="n">H</span> <span class="ow">in</span> <span class="n">Hs_sorted</span><span class="p">]</span>
+    <span class="n">Nrx_eff</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">psigma_diag</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">H</span> <span class="ow">in</span> <span class="n">Hs_sorted</span><span class="p">:</span>
+        <span class="n">Nrx</span><span class="p">,</span> <span class="n">Ntx</span> <span class="o">=</span> <span class="n">H</span><span class="o">.</span><span class="n">shape</span>
+        <span class="n">MAC_Covs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">cp</span><span class="o">.</span><span class="n">Variable</span><span class="p">((</span><span class="n">Ntx</span><span class="p">,</span> <span class="n">Ntx</span><span class="p">),</span> <span class="n">hermitian</span><span class="o">=</span><span class="kc">True</span><span class="p">))</span>
+        <span class="n">Xs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">cp</span><span class="o">.</span><span class="n">Variable</span><span class="p">((</span><span class="n">Nrx_eff</span><span class="p">,</span> <span class="n">Nrx_eff</span><span class="p">),</span> <span class="n">hermitian</span><span class="o">=</span><span class="kc">True</span><span class="p">))</span>
+    <span class="n">cost</span> <span class="o">=</span> <span class="n">cp</span><span class="o">.</span><span class="n">sum</span><span class="p">([</span><span class="n">alpha</span> <span class="o">*</span> <span class="n">cp</span><span class="o">.</span><span class="n">log_det</span><span class="p">(</span><span class="n">X</span><span class="p">)</span> <span class="k">for</span> <span class="n">X</span><span class="p">,</span> <span class="n">alpha</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">Xs</span><span class="p">,</span> <span class="n">alphas</span><span class="p">)])</span>
+    <span class="n">mat</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">matrix_equal</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">eye</span><span class="p">(</span><span class="n">Nrx_eff</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">X</span><span class="p">,</span> <span class="n">MAC_Cov</span><span class="p">,</span> <span class="n">H</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">Xs</span><span class="p">,</span> <span class="n">MAC_Covs</span><span class="p">,</span> <span class="n">Hs_sorted_pinv</span><span class="p">):</span>
+        <span class="c1"># H_e = (psigma_diag * V_u).conj().T @ H</span>
+        <span class="n">matrix_equal</span> <span class="o">+=</span> <span class="n">H</span> <span class="o">@</span> <span class="n">MAC_Cov</span> <span class="o">@</span> <span class="n">H</span><span class="o">.</span><span class="n">conj</span><span class="p">()</span><span class="o">.</span><span class="n">T</span>
+        <span class="n">mat</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">X</span> <span class="o">&lt;&lt;</span> <span class="n">matrix_equal</span><span class="p">)</span>
+    <span class="n">power</span> <span class="o">=</span> <span class="n">cp</span><span class="o">.</span><span class="n">sum</span><span class="p">([</span><span class="n">cp</span><span class="o">.</span><span class="n">real</span><span class="p">(</span><span class="n">cp</span><span class="o">.</span><span class="n">trace</span><span class="p">(</span><span class="n">MAC_Cov</span><span class="p">))</span> <span class="k">for</span> <span class="n">MAC_Cov</span> <span class="ow">in</span> <span class="n">MAC_Covs</span><span class="p">])</span> <span class="o">&lt;=</span> <span class="n">P</span>
+    <span class="n">positivity</span> <span class="o">=</span> <span class="p">[(</span><span class="n">MAC_Cov</span> <span class="o">&gt;&gt;</span> <span class="mi">0</span><span class="p">)</span> <span class="k">for</span> <span class="n">MAC_Cov</span> <span class="ow">in</span> <span class="n">MAC_Covs</span><span class="p">]</span>
+    <span class="n">positivity</span> <span class="o">+=</span> <span class="p">[(</span><span class="n">X</span> <span class="o">&gt;&gt;</span> <span class="mi">0</span><span class="p">)</span> <span class="k">for</span> <span class="n">X</span> <span class="ow">in</span> <span class="n">Xs</span><span class="p">]</span>
+    <span class="n">constraints</span> <span class="o">=</span> <span class="n">mat</span> <span class="o">+</span> <span class="p">[</span><span class="n">power</span><span class="p">]</span> <span class="o">+</span> <span class="n">positivity</span>
+    <span class="n">prob</span> <span class="o">=</span> <span class="n">cp</span><span class="o">.</span><span class="n">Problem</span><span class="p">(</span><span class="n">cp</span><span class="o">.</span><span class="n">Maximize</span><span class="p">(</span><span class="n">cost</span><span class="p">),</span> <span class="n">constraints</span><span class="p">)</span>
+    <span class="n">prob</span><span class="o">.</span><span class="n">solve</span><span class="p">(</span><span class="n">solver</span><span class="o">=</span><span class="n">cp</span><span class="o">.</span><span class="n">SCS</span><span class="p">,</span> <span class="n">eps</span><span class="o">=</span><span class="mf">1e-12</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="s2">&quot;optimal&quot;</span> <span class="ow">in</span> <span class="n">prob</span><span class="o">.</span><span class="n">status</span>
+    <span class="n">MAC_Covs_sorted</span> <span class="o">=</span> <span class="p">[</span><span class="n">Cov</span><span class="o">.</span><span class="n">value</span> <span class="k">for</span> <span class="n">Cov</span> <span class="ow">in</span> <span class="n">MAC_Covs</span><span class="p">]</span>
+    <span class="n">MAC_Covs</span> <span class="o">=</span> <span class="p">[</span><span class="kc">None</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">order</span><span class="p">]</span>
+    <span class="k">for</span> <span class="n">Cov</span><span class="p">,</span> <span class="n">o</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">MAC_Covs_sorted</span><span class="p">,</span> <span class="n">order</span><span class="p">[::</span><span class="o">-</span><span class="mi">1</span><span class="p">]):</span>
+        <span class="n">MAC_Covs</span><span class="p">[</span><span class="n">o</span><span class="p">]</span> <span class="o">=</span> <span class="n">Cov</span>
+    <span class="n">rates_sorted</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">MAC_rates_ordered</span><span class="p">(</span><span class="n">MAC_Covs_sorted</span><span class="p">,</span> <span class="n">Hs_sorted_pinv</span><span class="p">)</span>
+    <span class="n">rates</span> <span class="o">=</span> <span class="p">[</span><span class="kc">None</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">order</span><span class="p">]</span>
+    <span class="k">for</span> <span class="n">r</span><span class="p">,</span> <span class="n">o</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">rates_sorted</span><span class="p">,</span> <span class="n">order</span><span class="p">[::</span><span class="o">-</span><span class="mi">1</span><span class="p">]):</span>
+        <span class="n">rates</span><span class="p">[</span><span class="n">o</span><span class="p">]</span> <span class="o">=</span> <span class="n">r</span>
+    <span class="n">wsr</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">([</span><span class="n">w</span> <span class="o">*</span> <span class="n">r</span> <span class="k">for</span> <span class="n">w</span><span class="p">,</span> <span class="n">r</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">weights</span><span class="p">,</span> <span class="n">rates</span><span class="p">)])</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">wsr</span> <span class="o">==</span> <span class="n">pytest</span><span class="o">.</span><span class="n">approx</span><span class="p">(</span><span class="n">prob</span><span class="o">.</span><span class="n">value</span><span class="p">,</span> <span class="mf">1e-1</span><span class="p">):</span>
+        <span class="n">rates</span> <span class="o">=</span> <span class="n">MAC_rates</span><span class="p">(</span><span class="n">MAC_Covs</span><span class="p">,</span> <span class="n">Hs</span><span class="p">,</span> <span class="n">order</span><span class="p">)</span>
+    <span class="n">Omega_sbgr</span> <span class="o">=</span> <span class="o">-</span><span class="nb">max</span><span class="p">(</span><span class="n">weights</span><span class="p">)</span> <span class="o">*</span> <span class="n">pinv</span><span class="p">(</span><span class="n">Omega</span><span class="p">)</span>
+    <span class="n">Zs</span> <span class="o">=</span> <span class="n">Omega</span>
+    <span class="c1"># alphas[1] * logdet(Xs[1].value) - alphas[0] * logdet(Xs[0].value) - min(weights) * logdet(Omega)</span>
+    <span class="k">for</span> <span class="n">a</span><span class="p">,</span> <span class="n">MAC_Cov</span><span class="p">,</span> <span class="n">H</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">alphas</span><span class="p">,</span> <span class="n">MAC_Covs_sorted</span><span class="p">,</span> <span class="n">Hs_sorted_orig</span><span class="p">):</span>
+        <span class="n">Zs</span> <span class="o">=</span> <span class="n">Zs</span> <span class="o">+</span> <span class="n">H</span> <span class="o">@</span> <span class="n">MAC_Cov</span> <span class="o">@</span> <span class="n">H</span><span class="o">.</span><span class="n">conj</span><span class="p">()</span><span class="o">.</span><span class="n">T</span>
+        <span class="n">Omega_sbgr</span> <span class="o">=</span> <span class="n">Omega_sbgr</span> <span class="o">+</span> <span class="n">a</span> <span class="o">*</span> <span class="n">pinv</span><span class="p">(</span><span class="n">Zs</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">rates</span><span class="p">,</span> <span class="n">MAC_Covs</span><span class="p">,</span> <span class="n">order</span><span class="p">,</span> <span class="n">Omega_sbgr</span>
+
+
+<span class="k">def</span> <span class="nf">MAC_rates</span><span class="p">(</span><span class="n">MAC_Covs</span><span class="p">,</span> <span class="n">Hs</span><span class="p">,</span> <span class="n">MAC_decoding_order</span><span class="p">,</span> <span class="n">Omega</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="k">return</span> <span class="n">MAC_rates_withZs</span><span class="p">(</span><span class="n">MAC_Covs</span><span class="p">,</span> <span class="n">Hs</span><span class="p">,</span> <span class="n">MAC_decoding_order</span><span class="p">,</span> <span class="n">Omega</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+
+
+<span class="k">def</span> <span class="nf">MAC_rates_withZs</span><span class="p">(</span><span class="n">MAC_Covs</span><span class="p">,</span> <span class="n">Hs</span><span class="p">,</span> <span class="n">MAC_decoding_order</span><span class="p">,</span> <span class="n">Omega</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="n">order</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">reversed</span><span class="p">(</span><span class="n">MAC_decoding_order</span><span class="p">))</span>
+    <span class="n">Hs_sorted</span> <span class="o">=</span> <span class="p">[</span><span class="n">Hs</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">order</span><span class="p">]</span>
+    <span class="n">MAC_Covs_sorted</span> <span class="o">=</span> <span class="p">[</span><span class="n">MAC_Covs</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">order</span><span class="p">]</span>
+    <span class="n">rates_sorted</span><span class="p">,</span> <span class="n">Zs</span> <span class="o">=</span> <span class="n">MAC_rates_ordered</span><span class="p">(</span><span class="n">MAC_Covs_sorted</span><span class="p">,</span> <span class="n">Hs_sorted</span><span class="p">,</span> <span class="n">Omega</span><span class="p">)</span>
+    <span class="n">rates</span> <span class="o">=</span> <span class="p">[</span><span class="kc">None</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">order</span><span class="p">]</span>
+    <span class="k">for</span> <span class="n">r</span><span class="p">,</span> <span class="n">o</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">rates_sorted</span><span class="p">,</span> <span class="n">order</span><span class="p">):</span>
+        <span class="n">rates</span><span class="p">[</span><span class="n">o</span><span class="p">]</span> <span class="o">=</span> <span class="n">r</span>
+    <span class="k">return</span> <span class="n">rates</span><span class="p">,</span> <span class="n">Zs</span>
+
+
+<span class="k">def</span> <span class="nf">MAC_rates_ordered</span><span class="p">(</span><span class="n">MAC_Covs</span><span class="p">,</span> <span class="n">Hs</span><span class="p">,</span> <span class="n">Omega</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="n">Nrx</span> <span class="o">=</span> <span class="n">Hs</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">Z</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">eye</span><span class="p">(</span><span class="n">Nrx</span><span class="p">)</span> <span class="k">if</span> <span class="n">Omega</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">Omega</span>
+    <span class="n">e</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">real</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">eigvalsh</span><span class="p">(</span><span class="n">Z</span><span class="p">))</span>
+    <span class="n">v</span> <span class="o">=</span> <span class="n">log</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">product</span><span class="p">(</span><span class="n">e</span><span class="p">))</span>
+    <span class="n">rates</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">Zs</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">MAC_Cov</span><span class="p">,</span> <span class="n">H</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">MAC_Covs</span><span class="p">,</span> <span class="n">Hs</span><span class="p">):</span>
+        <span class="n">Znew</span> <span class="o">=</span> <span class="n">Z</span> <span class="o">+</span> <span class="n">H</span> <span class="o">@</span> <span class="n">MAC_Cov</span> <span class="o">@</span> <span class="n">H</span><span class="o">.</span><span class="n">conj</span><span class="p">()</span><span class="o">.</span><span class="n">T</span>
+        <span class="n">Zs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">Znew</span><span class="p">)</span>
+        <span class="c1"># compute rate = logdet(Znew) - logdet(Z)</span>
+        <span class="n">e</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">real</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">eigvalsh</span><span class="p">(</span><span class="n">Znew</span><span class="p">))</span>
+        <span class="n">vnew</span> <span class="o">=</span> <span class="n">log</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">product</span><span class="p">(</span><span class="n">e</span><span class="p">))</span>
+        <span class="n">rate</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">vnew</span> <span class="o">-</span> <span class="n">v</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+        <span class="n">rates</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">rate</span><span class="p">)</span>
+        <span class="n">Z</span> <span class="o">=</span> <span class="n">Znew</span>
+        <span class="n">v</span> <span class="o">=</span> <span class="n">vnew</span>
+    <span class="k">return</span> <span class="n">rates</span><span class="p">,</span> <span class="n">Zs</span>
+
+
+<span class="k">def</span> <span class="nf">BC_rates</span><span class="p">(</span><span class="n">BC_Covs</span><span class="p">,</span> <span class="n">Hs</span><span class="p">,</span> <span class="n">BC_encoding_order</span><span class="p">):</span>
+    <span class="n">rates</span> <span class="o">=</span> <span class="p">[</span><span class="kc">None</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">BC_encoding_order</span><span class="p">]</span>
+    <span class="n">Ntx</span> <span class="o">=</span> <span class="n">Hs</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+    <span class="n">Sum_INT</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">([</span><span class="n">Ntx</span><span class="p">,</span> <span class="n">Ntx</span><span class="p">])</span>
+    <span class="k">for</span> <span class="n">user</span> <span class="ow">in</span> <span class="nb">reversed</span><span class="p">(</span><span class="n">BC_encoding_order</span><span class="p">):</span>
+        <span class="n">BC_Cov</span> <span class="o">=</span> <span class="n">BC_Covs</span><span class="p">[</span><span class="n">user</span><span class="p">]</span>
+        <span class="n">H</span> <span class="o">=</span> <span class="n">Hs</span><span class="p">[</span><span class="n">user</span><span class="p">]</span>
+        <span class="n">Nrx</span> <span class="o">=</span> <span class="n">H</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">IPN</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">eye</span><span class="p">(</span><span class="n">Nrx</span><span class="p">)</span> <span class="o">+</span> <span class="n">H</span> <span class="o">@</span> <span class="n">Sum_INT</span> <span class="o">@</span> <span class="n">H</span><span class="o">.</span><span class="n">conj</span><span class="p">()</span><span class="o">.</span><span class="n">T</span>
+        <span class="n">rate</span> <span class="o">=</span> <span class="n">logdet</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">eye</span><span class="p">(</span><span class="n">Nrx</span><span class="p">)</span> <span class="o">+</span> <span class="n">H</span> <span class="o">@</span> <span class="n">BC_Cov</span> <span class="o">@</span> <span class="n">H</span><span class="o">.</span><span class="n">conj</span><span class="p">()</span><span class="o">.</span><span class="n">T</span> <span class="o">@</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">inv</span><span class="p">(</span><span class="n">IPN</span><span class="p">))</span>
+        <span class="n">rates</span><span class="p">[</span><span class="n">user</span><span class="p">]</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">rate</span><span class="p">)</span>
+        <span class="n">Sum_INT</span> <span class="o">=</span> <span class="n">Sum_INT</span> <span class="o">+</span> <span class="n">BC_Cov</span>
+    <span class="k">assert</span> <span class="nb">all</span><span class="p">(</span><span class="n">rates</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">rates</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">rates</span>
+
+
+<span class="k">def</span> <span class="nf">project_eigenvalues_to_given_sum_cvx</span><span class="p">(</span><span class="n">e</span><span class="p">,</span> <span class="n">P</span><span class="p">):</span>
+    <span class="c1"># setup the objective and constraints and solve the problem</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="n">cp</span><span class="o">.</span><span class="n">Variable</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">e</span><span class="p">))</span>
+    <span class="n">obj</span> <span class="o">=</span> <span class="n">cp</span><span class="o">.</span><span class="n">Minimize</span><span class="p">(</span><span class="n">cp</span><span class="o">.</span><span class="n">sum_squares</span><span class="p">(</span><span class="n">e</span> <span class="o">-</span> <span class="n">x</span><span class="p">))</span>
+    <span class="n">constraints</span> <span class="o">=</span> <span class="p">[</span><span class="n">x</span> <span class="o">&gt;=</span> <span class="mi">0</span><span class="p">,</span> <span class="n">cp</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="o">==</span> <span class="n">P</span><span class="p">]</span>
+    <span class="n">prob</span> <span class="o">=</span> <span class="n">cp</span><span class="o">.</span><span class="n">Problem</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="n">constraints</span><span class="p">)</span>
+    <span class="n">prob</span><span class="o">.</span><span class="n">solve</span><span class="p">(</span><span class="n">solver</span><span class="o">=</span><span class="n">cp</span><span class="o">.</span><span class="n">SCS</span><span class="p">,</span> <span class="n">eps</span><span class="o">=</span><span class="mf">1e-15</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">x</span><span class="o">.</span><span class="n">value</span>
+
+
+<div class="viewcode-block" id="project_eigenvalues_to_given_sum"><a class="viewcode-back" href="../../index.html#mcm.mimo.project_eigenvalues_to_given_sum">[docs]</a><span class="k">def</span> <span class="nf">project_eigenvalues_to_given_sum</span><span class="p">(</span><span class="n">eis</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">float</span><span class="p">],</span> <span class="n">P</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">float</span><span class="p">]:</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    eis</span>
+<span class="sd">    P</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    projected_eis</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">all</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">imag</span><span class="p">(</span><span class="n">eis</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">)</span>
+    <span class="c1"># sort them</span>
+    <span class="n">sorted_eigenvalues</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">real</span><span class="p">(</span><span class="n">eis</span><span class="p">))</span>
+
+    <span class="c1"># find current sum</span>
+    <span class="n">current_sum</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">sorted_eigenvalues</span><span class="p">)</span>
+    <span class="c1"># find number of nonzero entries after subtraction</span>
+    <span class="k">for</span> <span class="n">values_smaller_zero</span><span class="p">,</span> <span class="n">val</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">sorted_eigenvalues</span><span class="p">):</span>
+
+        <span class="n">values_geq_zero</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">sorted_eigenvalues</span><span class="p">)</span> <span class="o">-</span> <span class="n">values_smaller_zero</span>
+        <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">sorted_eigenvalues</span><span class="p">[</span><span class="n">values_smaller_zero</span><span class="p">:])</span> <span class="o">==</span> <span class="n">values_geq_zero</span>
+        <span class="c1"># check if this is enough</span>
+        <span class="n">max_sum_reduction</span> <span class="o">=</span> <span class="n">val</span> <span class="o">*</span> <span class="n">values_geq_zero</span> <span class="o">+</span> <span class="nb">sum</span><span class="p">(</span>
+            <span class="n">sorted_eigenvalues</span><span class="p">[:</span><span class="n">values_smaller_zero</span><span class="p">]</span>
+        <span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">max_sum_reduction</span> <span class="o">&gt;</span> <span class="p">(</span><span class="n">current_sum</span> <span class="o">-</span> <span class="n">P</span><span class="p">):</span>
+            <span class="k">break</span>
+
+    <span class="n">reduction</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">current_sum</span> <span class="o">-</span> <span class="n">P</span> <span class="o">-</span> <span class="nb">sum</span><span class="p">(</span><span class="n">sorted_eigenvalues</span><span class="p">[:</span><span class="n">values_smaller_zero</span><span class="p">])</span>
+    <span class="p">)</span> <span class="o">/</span> <span class="n">values_geq_zero</span>
+    <span class="n">projected_eigenvalues</span> <span class="o">=</span> <span class="p">[</span><span class="n">e</span> <span class="o">-</span> <span class="n">reduction</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">eis</span><span class="p">]</span>
+    <span class="n">projected_eigenvalues</span><span class="p">[</span><span class="n">projected_eigenvalues</span> <span class="o">&lt;</span> <span class="mf">0.0</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">return</span> <span class="n">projected_eigenvalues</span></div>
+
+
+<div class="viewcode-block" id="project_covariance_cvx"><a class="viewcode-back" href="../../index.html#mcm.mimo.project_covariance_cvx">[docs]</a><span class="k">def</span> <span class="nf">project_covariance_cvx</span><span class="p">(</span><span class="n">Xs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Matrix</span><span class="p">],</span> <span class="n">P</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Matrix</span><span class="p">]:</span>
+    <span class="sd">&quot;&quot;&quot;Projects covariance matrices to power constraint.</span>
+
+<span class="sd">    Implements the optimization of :func:`~mcm.mimo.project_convariances` in CVX.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    Xs</span>
+<span class="sd">    P</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    projected_Covs</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">Covs</span> <span class="o">=</span> <span class="p">[</span><span class="n">cp</span><span class="o">.</span><span class="n">Variable</span><span class="p">((</span><span class="n">X</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">X</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span> <span class="n">hermitian</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span> <span class="k">for</span> <span class="n">X</span> <span class="ow">in</span> <span class="n">Xs</span><span class="p">]</span>
+    <span class="n">obj</span> <span class="o">=</span> <span class="n">cp</span><span class="o">.</span><span class="n">Minimize</span><span class="p">(</span><span class="n">cp</span><span class="o">.</span><span class="n">sum</span><span class="p">([</span><span class="n">cp</span><span class="o">.</span><span class="n">sum_squares</span><span class="p">(</span><span class="n">Cov</span> <span class="o">-</span> <span class="n">X</span><span class="p">)</span> <span class="k">for</span> <span class="n">Cov</span><span class="p">,</span> <span class="n">X</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">Covs</span><span class="p">,</span> <span class="n">Xs</span><span class="p">)]))</span>
+    <span class="n">power</span> <span class="o">=</span> <span class="n">cp</span><span class="o">.</span><span class="n">sum</span><span class="p">([</span><span class="n">cp</span><span class="o">.</span><span class="n">real</span><span class="p">(</span><span class="n">cp</span><span class="o">.</span><span class="n">trace</span><span class="p">(</span><span class="n">Cov</span><span class="p">))</span> <span class="k">for</span> <span class="n">Cov</span> <span class="ow">in</span> <span class="n">Covs</span><span class="p">])</span> <span class="o">&lt;=</span> <span class="n">P</span>
+    <span class="n">positivity</span> <span class="o">=</span> <span class="p">[(</span><span class="n">Cov</span> <span class="o">&gt;&gt;</span> <span class="mi">0</span><span class="p">)</span> <span class="k">for</span> <span class="n">Cov</span> <span class="ow">in</span> <span class="n">Covs</span><span class="p">]</span>
+    <span class="n">constraints</span> <span class="o">=</span> <span class="p">[</span><span class="n">power</span><span class="p">]</span> <span class="o">+</span> <span class="n">positivity</span>
+    <span class="n">prob</span> <span class="o">=</span> <span class="n">cp</span><span class="o">.</span><span class="n">Problem</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="n">constraints</span><span class="p">)</span>
+    <span class="n">prob</span><span class="o">.</span><span class="n">solve</span><span class="p">(</span><span class="n">solver</span><span class="o">=</span><span class="n">cp</span><span class="o">.</span><span class="n">SCS</span><span class="p">,</span> <span class="n">eps</span><span class="o">=</span><span class="mf">1e-9</span><span class="p">)</span>
+    <span class="k">return</span> <span class="p">[</span><span class="n">Cov</span><span class="o">.</span><span class="n">value</span> <span class="k">for</span> <span class="n">Cov</span> <span class="ow">in</span> <span class="n">Covs</span><span class="p">]</span></div>
+
+
+<div class="viewcode-block" id="project_covariances"><a class="viewcode-back" href="../../index.html#mcm.mimo.project_covariances">[docs]</a><span class="k">def</span> <span class="nf">project_covariances</span><span class="p">(</span><span class="n">Covs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Matrix</span><span class="p">],</span> <span class="n">P</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Matrix</span><span class="p">]:</span>
+    <span class="sa">r</span><span class="sd">&quot;&quot;&quot;Projects covariance matrices to power constraint..</span>
+
+<span class="sd">    .. math::</span>
+
+<span class="sd">     \min_{\Omega} \lbrace \sum_{k \in K} \norm{C_k-X_k}_{F}^{2} : \sum_{k \in K}\tr(C_k) \leq P, C_k \geq 0 \forall k \in K \rbrace</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    Covs</span>
+<span class="sd">        Covariances to be projected</span>
+<span class="sd">    P</span>
+<span class="sd">        Target power constraint</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    List[Matrix]</span>
+<span class="sd">        Projected Covariances</span>
+
+
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">eigs</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">VVs</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">uMAC_Cov</span> <span class="ow">in</span> <span class="n">Covs</span><span class="p">:</span>
+        <span class="n">eig</span><span class="p">,</span> <span class="n">VV</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">eigh</span><span class="p">(</span><span class="n">uMAC_Cov</span><span class="p">)</span>
+        <span class="n">eigs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">eig</span><span class="p">)</span>
+        <span class="n">VVs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">VV</span><span class="p">)</span>
+    <span class="c1"># project to constraint set: operate on eigenvalues</span>
+    <span class="c1"># flatten a list of lists https://stackoverflow.com/a/952952</span>
+    <span class="n">eigenvalues</span> <span class="o">=</span> <span class="p">[</span><span class="n">item</span> <span class="k">for</span> <span class="n">sublist</span> <span class="ow">in</span> <span class="n">eigs</span> <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">sublist</span><span class="p">]</span>
+    <span class="n">projected</span> <span class="o">=</span> <span class="n">project_eigenvalues_to_given_sum</span><span class="p">(</span><span class="n">eigenvalues</span><span class="p">,</span> <span class="n">P</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="nb">sum</span><span class="p">(</span><span class="n">eigenvalues</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="n">P</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">Covs</span>
+    <span class="k">assert</span> <span class="nb">sum</span><span class="p">(</span><span class="n">projected</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="n">P</span> <span class="o">*</span> <span class="mf">1.01</span>
+    <span class="c1"># update</span>
+    <span class="n">Covs</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">sum_eigs</span> <span class="o">=</span> <span class="mf">0.0</span>
+    <span class="n">offset</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">for</span> <span class="n">eig</span><span class="p">,</span> <span class="n">VV</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">eigs</span><span class="p">,</span> <span class="n">VVs</span><span class="p">):</span>
+        <span class="n">new_eigs</span> <span class="o">=</span> <span class="n">projected</span><span class="p">[</span><span class="n">offset</span><span class="p">:</span> <span class="n">offset</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">eig</span><span class="p">)]</span>
+        <span class="n">offset</span> <span class="o">+=</span> <span class="nb">len</span><span class="p">(</span><span class="n">eig</span><span class="p">)</span>
+        <span class="n">sum_eigs</span> <span class="o">+=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">new_eigs</span><span class="p">)</span>
+        <span class="n">Covs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">VV</span> <span class="o">@</span> <span class="n">np</span><span class="o">.</span><span class="n">diag</span><span class="p">(</span><span class="n">new_eigs</span><span class="p">)</span> <span class="o">@</span> <span class="n">VV</span><span class="o">.</span><span class="n">conj</span><span class="p">()</span><span class="o">.</span><span class="n">T</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">sum_eigs</span> <span class="o">&lt;=</span> <span class="n">P</span> <span class="o">*</span> <span class="mf">1.01</span>
+    <span class="k">return</span> <span class="n">Covs</span></div>
+
+
+<div class="viewcode-block" id="MAC"><a class="viewcode-back" href="../../index.html#mcm.mimo.MAC">[docs]</a><span class="k">def</span> <span class="nf">MAC</span><span class="p">(</span>
+    <span class="n">Hs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Matrix</span><span class="p">],</span>
+    <span class="n">P</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">weights</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">float</span><span class="p">],</span>
+    <span class="n">Omega</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Matrix</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">rate_threshold</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1e-6</span><span class="p">,</span>
+    <span class="n">max_iterations</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mi">30</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">float</span><span class="p">],</span> <span class="n">List</span><span class="p">[</span><span class="n">Matrix</span><span class="p">],</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]]:</span>
+    <span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Optimize uplink transmit covariances.</span>
+
+<span class="sd">    Given channel matrices :math:`(H_1, \ldots, H_K) `</span>
+
+<span class="sd">    .. math::</span>
+
+<span class="sd">        [\Sigma_1, \ldots, \Sigma_K] = \</span>
+<span class="sd">        \max_{\Sigma_1,\ldots,\Sigma} \lbrace \sum_{k \in K} w_k r_k(\Sigma_1,\ldots,\Sigma_k): \</span>
+<span class="sd">        \sum_{k\in K} \tr(\Sigma_k) &lt; P, \</span>
+<span class="sd">        \Sigma_k in \geq 0 \forall k \in K \rbrace</span>
+
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    Hs: List[Matrix]</span>
+<span class="sd">        Channel Matrices</span>
+<span class="sd">    P: float</span>
+<span class="sd">        Transmit power constraint</span>
+<span class="sd">    weights: List[float]</span>
+<span class="sd">        User weights</span>
+<span class="sd">    Omega: Optional[Matrix]</span>
+<span class="sd">        Uplink noise covariance</span>
+<span class="sd">    rate_threshold: float</span>
+<span class="sd">        Threshold for rate change to continue optimization</span>
+<span class="sd">    max_iterations: float</span>
+<span class="sd">        Limit on the numnber of iterations</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    rates: List[float]</span>
+<span class="sd">        User rates</span>
+<span class="sd">    MAC_Covs: List[Matrices]</span>
+<span class="sd">        Transmit covariances</span>
+<span class="sd">    order: List[int]</span>
+<span class="sd">        Decodicng order</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># start with no rate change</span>
+    <span class="n">rate_change</span> <span class="o">=</span> <span class="mi">0</span>
+
+    <span class="n">Omega</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">eye</span><span class="p">(</span><span class="n">Hs</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span> <span class="k">if</span> <span class="n">Omega</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">Omega</span>
+    <span class="n">Hs_sorted</span><span class="p">,</span> <span class="n">alphas</span><span class="p">,</span> <span class="n">order</span> <span class="o">=</span> <span class="n">sort_channels</span><span class="p">(</span><span class="n">Hs</span><span class="p">,</span> <span class="n">weights</span><span class="p">)</span>
+    <span class="n">sum_transmit_antennas</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">H</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">H</span> <span class="ow">in</span> <span class="n">Hs_sorted</span><span class="p">)</span>
+    <span class="n">MAC_Covs_sorted</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="n">P</span> <span class="o">/</span> <span class="n">sum_transmit_antennas</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">eye</span><span class="p">(</span><span class="n">H</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span> <span class="k">for</span> <span class="n">H</span> <span class="ow">in</span> <span class="n">Hs_sorted</span>
+    <span class="p">]</span>
+
+    <span class="c1"># initialize step_size parameter</span>
+    <span class="n">d</span> <span class="o">=</span> <span class="mi">1</span>
+    <span class="n">d0</span> <span class="o">=</span> <span class="mi">1</span>
+    <span class="c1"># compute Z matrix</span>
+    <span class="k">for</span> <span class="n">outer_i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">max_iterations</span><span class="p">):</span>
+        <span class="n">rates</span><span class="p">,</span> <span class="n">Zs</span> <span class="o">=</span> <span class="n">MAC_rates_ordered</span><span class="p">(</span><span class="n">MAC_Covs_sorted</span><span class="p">,</span> <span class="n">Hs_sorted</span><span class="p">,</span> <span class="n">Omega</span><span class="p">)</span>
+        <span class="n">last_weighted_rate</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span>
+            <span class="p">[</span><span class="n">w</span> <span class="o">*</span> <span class="n">r</span> <span class="k">for</span> <span class="n">w</span><span class="p">,</span> <span class="n">r</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="nb">sorted</span><span class="p">(</span><span class="n">weights</span><span class="p">,</span> <span class="n">reverse</span><span class="o">=</span><span class="kc">True</span><span class="p">),</span> <span class="n">rates</span><span class="p">)]</span>
+        <span class="p">)</span>
+        <span class="c1"># precompute inverses</span>
+        <span class="n">Z_invs</span> <span class="o">=</span> <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">inv</span><span class="p">(</span><span class="n">Z</span><span class="p">)</span> <span class="k">for</span> <span class="n">Z</span> <span class="ow">in</span> <span class="n">Zs</span><span class="p">]</span>
+
+        <span class="c1"># compute the gradients</span>
+        <span class="n">dMAC_Covs</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="p">(</span><span class="n">MAC_Cov</span><span class="p">,</span> <span class="n">H</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="nb">zip</span><span class="p">(</span><span class="n">MAC_Covs_sorted</span><span class="p">,</span> <span class="n">Hs_sorted</span><span class="p">)):</span>
+            <span class="n">dMAC_Cov</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">([</span><span class="n">MAC_Cov</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">MAC_Cov</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]])</span>
+            <span class="k">for</span> <span class="n">Z_inv</span><span class="p">,</span> <span class="n">alpha</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">Z_invs</span><span class="p">[</span><span class="n">k</span><span class="p">:],</span> <span class="n">alphas</span><span class="p">[</span><span class="n">k</span><span class="p">:]):</span>
+                <span class="n">dMAC_Cov</span> <span class="o">=</span> <span class="n">dMAC_Cov</span> <span class="o">+</span> <span class="n">alpha</span> <span class="o">*</span> <span class="n">H</span><span class="o">.</span><span class="n">conj</span><span class="p">()</span><span class="o">.</span><span class="n">T</span> <span class="o">@</span> <span class="n">Z_inv</span> <span class="o">@</span> <span class="n">H</span>
+            <span class="n">dMAC_Covs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">dMAC_Cov</span><span class="p">)</span>
+        <span class="n">dMAC_Covs_trace</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">([</span><span class="n">np</span><span class="o">.</span><span class="n">trace</span><span class="p">(</span><span class="n">dMAC_Cov</span><span class="p">)</span> <span class="k">for</span> <span class="n">dMAC_Cov</span> <span class="ow">in</span> <span class="n">dMAC_Covs</span><span class="p">])</span>
+        <span class="n">dMAC_Covs</span> <span class="o">=</span> <span class="p">[</span><span class="n">P</span> <span class="o">/</span> <span class="n">dMAC_Covs_trace</span> <span class="o">*</span> <span class="n">dMAC_Cov</span> <span class="k">for</span> <span class="n">dMAC_Cov</span> <span class="ow">in</span> <span class="n">dMAC_Covs</span><span class="p">]</span>
+        <span class="k">for</span> <span class="n">inner_i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">max_iterations</span><span class="p">):</span>
+            <span class="c1"># now update the covariances</span>
+            <span class="n">updated_MAC_Covs</span> <span class="o">=</span> <span class="p">[</span>
+                <span class="n">MAC_Cov</span> <span class="o">+</span> <span class="n">d0</span> <span class="o">/</span> <span class="n">d</span> <span class="o">*</span> <span class="n">dMAC_Cov</span>
+                <span class="k">for</span> <span class="n">MAC_Cov</span><span class="p">,</span> <span class="n">dMAC_Cov</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">MAC_Covs_sorted</span><span class="p">,</span> <span class="n">dMAC_Covs</span><span class="p">)</span>
+            <span class="p">]</span>
+            <span class="n">updated_MAC_Covs</span> <span class="o">=</span> <span class="n">project_covariances</span><span class="p">(</span><span class="n">updated_MAC_Covs</span><span class="p">,</span> <span class="n">P</span><span class="p">)</span>
+            <span class="n">rates</span> <span class="o">=</span> <span class="n">MAC_rates_ordered</span><span class="p">(</span><span class="n">updated_MAC_Covs</span><span class="p">,</span> <span class="n">Hs_sorted</span><span class="p">,</span> <span class="n">Omega</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="n">this_weighted_rate</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span>
+                <span class="p">[</span><span class="n">w</span> <span class="o">*</span> <span class="n">r</span> <span class="k">for</span> <span class="n">w</span><span class="p">,</span> <span class="n">r</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="nb">sorted</span><span class="p">(</span><span class="n">weights</span><span class="p">,</span> <span class="n">reverse</span><span class="o">=</span><span class="kc">True</span><span class="p">),</span> <span class="n">rates</span><span class="p">)]</span>
+            <span class="p">)</span>
+            <span class="n">LOGGER</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Competed inner iteration </span><span class="si">{</span><span class="n">inner_i</span><span class="si">}</span><span class="s2"> - current obj </span><span class="si">{</span><span class="n">this_weighted_rate</span><span class="si">}</span><span class="s2"> - last obj </span><span class="si">{</span><span class="n">last_weighted_rate</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+            <span class="k">if</span> <span class="n">this_weighted_rate</span> <span class="o">&lt;</span> <span class="n">last_weighted_rate</span><span class="p">:</span>
+                <span class="n">d</span> <span class="o">+=</span> <span class="mi">1</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">rate_change</span> <span class="o">=</span> <span class="n">this_weighted_rate</span> <span class="o">-</span> <span class="n">last_weighted_rate</span>
+                <span class="n">MAC_Covs_sorted</span> <span class="o">=</span> <span class="n">updated_MAC_Covs</span>
+                <span class="k">break</span>
+        <span class="n">LOGGER</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;Competed outer iteration </span><span class="si">{</span><span class="n">outer_i</span><span class="si">}</span><span class="s2"> - current obj </span><span class="si">{</span><span class="n">this_weighted_rate</span><span class="si">}</span><span class="s2"> - rate change </span><span class="si">{</span><span class="n">rate_change</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">rate_change</span> <span class="o">/</span> <span class="n">this_weighted_rate</span> <span class="o">&lt;</span> <span class="n">rate_threshold</span><span class="p">:</span>
+            <span class="k">break</span>
+
+    <span class="n">MAC_Covs</span> <span class="o">=</span> <span class="p">[</span><span class="kc">None</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">order</span><span class="p">]</span>
+    <span class="k">for</span> <span class="n">Cov</span><span class="p">,</span> <span class="n">o</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">MAC_Covs_sorted</span><span class="p">,</span> <span class="n">order</span><span class="p">[::</span><span class="o">-</span><span class="mi">1</span><span class="p">]):</span>
+        <span class="n">MAC_Covs</span><span class="p">[</span><span class="n">o</span><span class="p">]</span> <span class="o">=</span> <span class="n">Cov</span>
+    <span class="n">rates</span> <span class="o">=</span> <span class="n">MAC_rates</span><span class="p">(</span><span class="n">MAC_Covs</span><span class="p">,</span> <span class="n">Hs</span><span class="p">,</span> <span class="n">order</span><span class="p">,</span> <span class="n">Omega</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">rates</span><span class="p">,</span> <span class="n">MAC_Covs</span><span class="p">,</span> <span class="n">order</span></div>
+</pre></div>
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="../../index.html">Multi-Cell-MIMO</a></h1>
+
+
+
+
+
+
+
+
+<h3>Navigation</h3>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="../../index.html">Documentation overview</a><ul>
+  <li><a href="../index.html">Module code</a><ul>
+  </ul></li>
+  </ul></li>
+</ul>
+</div>
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>$('#searchbox').show(0);</script>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &copy;2021, Andreas Dotzler.
+      
+      |
+      Powered by <a href="http://sphinx-doc.org/">Sphinx 4.1.2</a>
+      &amp; <a href="https://github.com/bitprophet/alabaster">Alabaster 0.7.12</a>
+      
+    </div>
+
+    
+
+    
+  </body>
+</html>
