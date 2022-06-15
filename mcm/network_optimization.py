@@ -9,12 +9,133 @@ import  logging
 import copy
 from numpy.lib.arraysetops import unique
 
-from mcm.network import Network
+
 import numpy.random
 
 from .utils import InfeasibleOptimization
 LOGGER = logging.getLogger(__name__)
 
+class Transmitter:
+    def __init__(self, users_per_mode, As_per_mode):
+        self.users_per_mode : dict[str, list[int]] = users_per_mode
+        self.As_per_mode: dict[str, np.array] = As_per_mode
+        self.modes = list(As_per_mode.keys())
+        self.users = []
+        for users in users_per_mode.values():
+            self.users += users
+        self.users = list(set(self.users))
+
+
+    def wsr(self, weights, mode):
+        t_weights = weights[self.users_per_mode[mode]]
+        A = self.As_per_mode[mode]
+        max_i = np.argmax(t_weights @ A)
+        rates = A[:, max_i]
+        return t_weights @ rates, rates
+
+
+    def util_fixed_fractions(self, fractions, util, q_min, q_max):
+        return timesharing_fixed_fractions(util, fractions, self.users_per_mode, self.As_per_mode, q_min, q_max)
+
+class Network:
+    def __init__(self, users_per_mode_and_transmitter, As):
+        self.users_per_mode_and_transmitter = users_per_mode_and_transmitter
+        self.As = As
+        self.transmitters = {}
+        At = {}
+        users_t = {}
+        for mode in As:
+            for transmitter, users in self.users_per_mode_and_transmitter[mode].items():
+                if transmitter not in At:
+                    At[transmitter] = {}
+                At[transmitter][mode] = As[mode][transmitter]
+                if transmitter not in users_t:
+                    users_t[transmitter] = {}
+                users_t[transmitter][mode] = users
+        for transmitter in At:
+            self.transmitters[transmitter] = Transmitter(users_t[transmitter], At[transmitter])
+        users = []
+        for t in self.transmitters.values():
+            users += t.users
+        self.users = list(set(users))    
+        self.modes = list(As.keys())    
+
+
+    #def wsr(self, weights):
+    #    value, rates, _, _ = timesharing_network(weighted_sum_rate(weights), self.users_per_mode_and_transmitter, self.As)
+    #    return value, rates
+
+
+    def wsr_per_mode(self, weights):
+        max_value = -np.Inf
+        max_rates = None
+        _, A_m = self.wsr_per_mode_and_transmitter(weights)
+        for mode in self.As:
+            mode_rates = np.zeros(len(weights))
+            mode_value = 0
+            for transmitter, users in self.users_per_mode_and_transmitter[mode].items():
+                rates = A_m[mode][transmitter]
+                value = weights[users] @ rates
+                mode_rates[users] += rates
+                mode_value += value
+            if mode_value > max_value:
+                max_value = mode_value
+                max_rates = mode_rates
+        assert len(weights) == len(max_rates)
+        return max_value, max_rates
+
+    def wsr_per_mode_and_transmitter(self, weights):
+        values = {}
+        A_max = {}
+        # for mode in self.As:
+        #     A_max[mode] = {}
+        #     values[mode] = {}
+        #     for transmitter, users in self.users_per_mode_and_transmitter[mode].items():
+        #         t_weights = weights[users]
+        #         # value, rates =  _, _ = timesharing_network(weighted_sum_rate(weights), {mode: self.users_per_mode_and_transmitter[mode]},
+        #         #                                     {mode: self.As[mode]})
+        #         #value, rates, alpha, lambda_phy = time_sharing(weighted_sum_rate(t_weights), self.As[mode][transmitter])
+        #         A = self.As[mode][transmitter]
+        #         max_i = np.argmax(t_weights @ A)
+        #         rates = A[:, max_i]
+        #         #assert t_weights @ rates == pytest.approx(value, rel=1e3, abs=1e-2)
+        #         A_max[mode][transmitter] = rates
+        #         values[mode][transmitter] = t_weights @ rates
+        for transmitter_id, transmitter in self.transmitters.items():
+            for mode in transmitter.As_per_mode:
+                val, rates = transmitter.wsr(weights, mode)
+                if mode not in values:
+                    values[mode] = {}
+                values[mode][transmitter_id] = val
+                if mode not in A_max:
+                    A_max[mode] = {}
+                A_max[mode][transmitter_id] = rates
+                
+        return values, A_max
+
+    def util_fixed_fractions(self, fractions, util, q_min, q_max):
+        F = 0
+        F_t_s = {}
+        r = np.zeros(len(self.users))
+        alphas = {}
+        d_f = {}
+        for transmitter_id, t in self.transmitters.items():
+            F_t, r_t, alpha_t, [lambdas, w_min, w_max, d_f_t_m, d_c_m] = t.util_fixed_fractions(
+                fractions, util, q_min[t.users], q_max[t.users])
+            for mode, a in alpha_t.items():
+                if mode not in alphas:
+                    alphas[mode] = {}
+                alphas[mode][transmitter_id] = a
+            #for mode, d in d_f_t_m.items():
+            #    if mode not in d_f:
+            #        d_f[mode] = {}
+            d_f[transmitter_id] = d_f_t_m
+            F += F_t
+            F_t_s[transmitter_id] = F_t
+            for user, rate in r_t.items():
+                r[user] += rate
+        return F, r, alphas, d_f, F_t_s       
+      
 
 
 # TODO we can use time_sharing network for the approximation
@@ -31,9 +152,6 @@ LOGGER = logging.getLogger(__name__)
 # need the protocol implementations
 
 # verify the normal cone thing
-
-
-
 
 # These tow functions are my very strange way to build a wsr from the time_sharing use an object
 def I_C(A):
@@ -53,8 +171,13 @@ def dual_problem_app(util, weights, q_max = None, q_min = None):
     if q_min is not None:
         constraints_dual.append(q >= q_min)
     prob_dual = cp.Problem(cp.Maximize(cost_dual), constraints_dual)
-    prob_dual.solve(solver=cp.SCS, eps=1e-8)
+    prob_dual.solve()
     return prob_dual.value, q.value
+    # TODO, this is a short cut for proportional fail
+    #    q_app = np.minimum(q_max, np.maximum(q_min, 1 / weights))
+    #    q_app[weights <= 0] = q_max[weights <= 0]
+    #    v_app = sum(np.log(q_app)) - weights @ q_app
+    #    assert abs(v_app_1 - v_app) <= 10**-6
 
 
 
@@ -108,93 +231,6 @@ def optimize_network_explict(util, q_min, q_max, network: Network):
 def optimize_network_app_phy(util, q_min, q_max, network):
     return optimize_app_phy(util, q_min, q_max, network.wsr_per_mode)
 
-def optimize_dual_decomp_subgradient(util, q_min, q_max, wsr_phy):
-    weights = np.ones(len(q_min))
-    for i in range(1000):
-        v_phy, c = wsr_phy(weights)
-        v_app, q = dual_problem_app(util, weights, q_max, q_min)
-        weights -= 1/(i+1)*(c - q)
-        if i == 0:
-            r = c
-        else:
-            r = i/(i+1)*r + 1/(i+1)*c  
-        primal_value = sum(np.log(r))
-        dual_value = v_app + v_phy
-        gap = (dual_value - primal_value)
-
-        LOGGER.info(f"Dual Subgradient: Iteration {i} - Dual Value {dual_value}- Primal Value {primal_value} - Gap {gap}")
-        if gap < 1e-6:
-            break
-    return primal_value, r    
-
-
-def optimize_dual_decomp_approx(util, q_min, q_max, wsr_phy):
-    weights = np.ones(len(q_min))
-    # strange way to evaluate util(q_min)
-    v_q_min, _ = dual_problem_app(util, np.zeros_like(weights), q_min, q_min)
-    # this is equal to evaluate the function for  lambda = [-Inf, ..., -Inf] 
-    U_i = [v_q_min]
-    z_i = [np.zeros((len(q_min),1))]
-    c_i = [q_min]
-    q_i = [q_min]
-    best_dual = np.Inf
-    for i in range(1000):
-        #alpha = cp.Variable((i+1,1), nonneg=True)  
-        #c_sum = cp.sum(alpha) == 1
-        #c_schedule = z_i@alpha == np.zeros((len(q_min),1)) 
-        #prob = cp.Problem(cp.Maximize(alpha.T@U_i), [c_sum, c_schedule])
-        #prob.solve()
-
-        mu = cp.Variable(1)
-        la = cp.Variable(len(q_min))
-        cons = [mu >= u + la@(c - q) for u,c,q in zip(U_i, c_i, q_i)]
-        #cons = [mu >= u + la@z for u,z in zip(U_i, z_i)]
-        prob = cp.Problem(cp.Minimize(mu), cons)
-        prob.solve()
-        # alpha = [c.dual_value[0] for c in cons]
-        # sum([a*u for a, u in zip(alpha, U_i)]) == prob.value
-        # sum([a*z for a, z in zip(alpha, z_i)]) == 0
-
-        #mu = cp.Variable(2)
-        #la = cp.Variable(len(q_min))
-        #cons_U_Q = [mu[0] >= u - la@q for u, q in zip(U_i, q_i)]
-        #cons_I_C = [mu[i+1] >= la@c  for c in c_i]
-        #prob = cp.Problem(cp.Minimize(sum(mu)), cons_U_Q + cons_I_C)
-        #prob.solve()
-
-        mu = cp.Variable(len(q_min)+1)
-        la = cp.Variable(len(q_min))
-        cons_U_Q = []
-        
-        for j in range(len(q_min)):
-            cons_U_Q += [mu[j] >= np.log(q[j]) - la[j]*q[j] for u, q in zip(U_i, q_i)]
-        cons_I_C = [mu[j+1] >= la@c  for c in c_i]
-        prob = cp.Problem(cp.Minimize(sum(mu)), cons_U_Q + cons_I_C)
-        prob.solve()
-
-
-        weights = la.value
-        v_phy, c = wsr_phy(weights)        
-        v_app, q = dual_problem_app(util, weights, q_max, q_min)
-        c_i.append(c)
-        q_i.append(q)
-        z_i.append(c - q)
-        
-        # z_i = np.c_[z_i, (q - c)]
-        # v_app = U(q) - weights@q -> U(q) = v_app + weights@q
-        U_i.append(v_app + weights@q)
-        
-        primal_value = prob.value
-        best_dual = min(v_app + v_phy, best_dual)
-        gap = (best_dual - primal_value) / abs(best_dual)
-
-        LOGGER.info(f"Dual Approx: Iteration {i} - Dual Value {best_dual}- Primal Value {primal_value} - Gap {gap}")
-        if gap < 1e-3:
-            break
-    return primal_value, q    
-
-
-
 
 def optimize_app_phy(util, q_min, q_max, wsr_phy):
     
@@ -203,32 +239,30 @@ def optimize_app_phy(util, q_min, q_max, wsr_phy):
     assert len(q_max) == n_users
     A = np.minimum(q_max,q_min).reshape((n_users,1))
 
+    best_dual_value = np.inf
     for n in range(1, 1000):
         # create and solve the approximated problem
-
-        approx_value, q, alpha, [weights, w_min, w_max, mu] = time_sharing_cvx(util, A, q_min, q_max)
-
-
-        q_app = np.minimum(q_max, np.maximum(q_min, 1 / weights))
-        q_app[weights <= 0] = q_max[weights <= 0]
-        v_app = sum(np.log(q_app)) - weights @ q_app
-
-        v_phy, c = wsr_phy(weights)
+        approx_value, q, alpha, [la, w_min, w_max, mu] = time_sharing_cvx(util, A, q_min, q_max)
+        
+        # solve the dual problem to provide bound and update 
+        v_app, _ = dual_problem_app(util, la, q_max, q_min)
+        v_phy, c = wsr_phy(la)
         A = np.c_[A, c]
-        #print("New approximation points: ", c)
-        #mu = max((weights @ A).tolist()[0])
-        # TODO check the breaking criterium
+
+        # breaking criterium
         # U*(la) + R*(la) >= min U*(la) + R*(la) = max U(q) + R(q) >= U(q) + R_approx(q)
         # U*(la) = v_app
         # R*(la) = v_phy
         # Q(q) = approx_value
         # R_approx(q) = 0
-        # TODO v_app + v_phy ist the current dual value, we shoul track the minmal one
+
         dual_value = v_app + v_phy
-        LOGGER.info(f"Max_mode: Iteration {n} - Dual Approximation {approx_value} - Dual Value {dual_value}")
-        if abs(dual_value - approx_value) < 0.001:
+        best_dual_value = min(dual_value, best_dual_value)
+        gap = abs(best_dual_value - approx_value) / abs(best_dual_value)
+        LOGGER.info(f"Iteration {n} - Primal Approx {approx_value} - Dual Approx {dual_value} - Gap: {gap} ")
+        if gap < 0.001:
             break
-    return approx_value, q, alpha, [weights, w_min, w_max, mu]
+    return approx_value, q, alpha, [la, w_min, w_max, mu]
 
 
 

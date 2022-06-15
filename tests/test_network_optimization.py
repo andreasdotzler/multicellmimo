@@ -1,13 +1,21 @@
 import logging
-import numpy as np
-import cvxpy as cp
-import pytest
 
+import cvxpy as cp
+import numpy as np
+import pytest
+from mcm.algorithms import (optimize_dual_decomp_subgradient,
+                            optimize_dual_cuttingplane,
+                            optimize_primal_sub)
+
+from mcm.network_optimization import (I_C, I_C_Q, Network, dual_problem_app,
+                                      optimize_app_phy, Network,
+                                      optimize_network_app_network,
+                                      optimize_network_app_phy,
+                                      optimize_network_explict,
+                                      proportional_fair, time_sharing,
+                                      time_sharing_cvx, time_sharing_no_duals,
+                                      timesharing_network, weighted_sum_rate)
 from mcm.utils import InfeasibleOptimization
-from mcm.network import Network
-from mcm.network_optimization import optimize_dual_decomp_subgradient, optimize_dual_decomp_approx, time_sharing, optimize_network_app_phy, timesharing_network, proportional_fair, \
-    weighted_sum_rate, time_sharing_cvx, Network, I_C, I_C_Q, dual_problem_app, time_sharing_no_duals, optimize_network_app_network, optimize_app_phy, optimize_network_explict
-from mcm.algorithms import optimize_primal_sub
 
 LOGGER = logging.getLogger(__name__)
 
@@ -91,9 +99,12 @@ def test_fixed_f():
         for mode, d in d_f_t_n.items():
             assert d == pytest.approx(d_f_network[mode][t])
 
+@pytest.fixture(scope="function")
+def seed():
+    np.random.seed(41)
 
 @pytest.mark.parametrize("network", [test_network(), test_network(20, np.random.random)])
-def test_global_network(network):
+def test_global_network(network, seed):
     q_min = np.array([0.1] * 30)
     #q_min[0] = 0.5
     q_max = np.array([10.0] * 30)
@@ -105,8 +116,8 @@ def test_global_network(network):
     verfiy_fractional_schedule(alphas_network)
 
     # Calculate by approximation algorithm
-    opt_value, opt_q = optimize_network_app_phy(proportional_fair, q_min, q_max, network)
-    assert opt_value == pytest.approx(value, 1e-3)
+    opt_value, opt_q, _, _ = optimize_network_app_phy(proportional_fair, q_min, q_max, network)
+    assert opt_value == pytest.approx(value, 1e-2)
     assert opt_q == pytest.approx(rates, rel=1e-1, abs=1e-1)
 
 

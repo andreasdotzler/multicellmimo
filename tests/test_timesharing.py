@@ -1,12 +1,15 @@
 import numpy as np
 import pytest
 from mcm.algorithms import (optimize_primal_column,
-                            optimize_primal_sub,
-                            optimize_primal_subgradient_projected,
+                            optimize_primal_subgradient_projected,                            
+                            optimize_dual_decomp_subgradient,
+                            optimize_dual_cuttingplane,
+                            optimize_dual_multicut,
+                            optimize_dual_multicut_peruser,
+                            optimize_app_phy_rateregionapprox,
                             optimize_primal_subgradient_rosen)
 from mcm.network_optimization import (I_C, I_C_Q, dual_problem_app,
-                                      optimize_app_phy,
-                                      optimize_dual_decomp_approx,
+                                      optimize_app_phy,                                      
                                       proportional_fair, time_sharing,
                                       time_sharing_cvx, weighted_sum_rate)
 from mcm.utils import InfeasibleOptimization
@@ -44,7 +47,12 @@ def test_timesharing_wsr():
 @pytest.mark.parametrize("optimize", [optimize_primal_column, 
                                       #optimize_primal_sub, 
                                       optimize_primal_subgradient_projected, 
-                                      optimize_primal_subgradient_rosen
+                                      optimize_primal_subgradient_rosen,
+                                      optimize_dual_decomp_subgradient,
+                                      optimize_dual_cuttingplane,
+                                      optimize_dual_multicut,
+                                      optimize_dual_multicut_peruser,
+                                      optimize_app_phy_rateregionapprox,
                                       ])
 def test_primal_sub(A, optimize):
     n_users = A.shape[0]
@@ -86,7 +94,8 @@ def test_timesharing_fair(A):
     assert all(lambda_opt @ (A - rates.reshape(len(rates), 1)) <= 0.001)
     q_app = np.minimum(q_max, np.maximum(q_min, 1 / lambda_opt))
     q_app[lambda_opt <= 0] = q_max[lambda_opt <= 0]
- 
+    
+    # todo assert mu = max((weights @ A).tolist()[0])
     assert rates == pytest.approx(q_app, rel=1e-3, abs=1e-1)
 
     
@@ -118,7 +127,7 @@ def test_timesharing_fair(A):
     #assert opt_value_dual_subgradient == pytest.approx(value, 1e-3)
     #assert opt_q_dual_subgradient == pytest.approx(rates, rel=1e-1, abs=1e-1)
 
-    opt_value_dual_approx, opt_q_dual_approx = optimize_dual_decomp_approx(proportional_fair, q_min, q_max, I_C(A))
+    opt_value_dual_approx, opt_q_dual_approx = optimize_dual_cuttingplane(proportional_fair, q_min, q_max, I_C(A))
     assert opt_value_dual_approx == pytest.approx(value, 1e-3)
     assert opt_q_dual_approx == pytest.approx(rates, rel=1e-1, abs=1e-1)
 
