@@ -11,6 +11,7 @@ from numpy.lib.arraysetops import unique
 
 
 import numpy.random
+from pydantic import NoneStr
 from pytest import approx
 
 from .utils import InfeasibleOptimization
@@ -19,11 +20,13 @@ from typing import Callable
 
 
 
-
 class Transmitter:
-    def __init__(self, users_per_mode, wsr_per_mode, id=None):
+    def __init__(self, users_per_mode, wsr_per_mode, id=None, util=None, q_min=None, q_max=None):
         self.id = id
         self.users_per_mode : dict[str, list[int]] = users_per_mode
+        any_users = next(iter(self.users_per_mode.values()))
+        for users in self.users_per_mode.values():
+            assert users == any_users, "Not implemented, if we want different users per mode, some things may break"
         self.wsr_per_mode: dict[str, Callable[[np.array],(int, np.array)]] = wsr_per_mode
         self.As_per_mode: dict[str, np.array] = {}
         self.modes = list(wsr_per_mode.keys())
@@ -31,9 +34,20 @@ class Transmitter:
         for users in users_per_mode.values():
             self.users += users
         self.users = list(set(self.users))
+        self.util = util
+        assert q_min is None or len(q_min) == len(self.users) 
+        self.q_min = q_min
+        assert q_max is None or len(q_max) == len(self.users)
+        self.q_max = q_max
+        self.weights = np.ones(len(self.users))
+        self.average_transmit_rate = None
+        self.iteration = 0
+        self.best_dual_value = np.Inf
 
+    def wsr_local_weights(self, mode):
+        return self.wsr(self.weights, mode)
 
-    def wsr(self, weights, mode):
+    def wsr(self, weights, mode):        
         t_weights = weights[self.users_per_mode[mode]]
         val, rates = self.wsr_per_mode[mode](t_weights)
         if mode not in self.As_per_mode:
@@ -42,6 +56,25 @@ class Transmitter:
             self.As_per_mode[mode] = np.c_[self.As_per_mode[mode], rates.reshape((len(rates),1))]
         return val, rates
 
+    def update_weights(self, m_opt):
+        c_t_l_1 = self.As_per_mode[m_opt][:,-1]
+        ## TODO elevate this to all users!
+        # = np.zeros(len(self.users))
+        #c_t_l_1[self.users_per_mode[m_opt]] += c_opt
+        v_phy = self.weights @ c_t_l_1
+        v_app, q_t_l_1 = dual_problem_app(self.util, self.weights, self.q_max, self.q_min)
+        l = self.iteration
+        #self.weights -= 1/(l+1)*(c_t_l_1 - q_t_l_1)
+        self.weights -= (c_t_l_1 - q_t_l_1)
+        if l == 0:
+            self.average_transmit_rate = c_t_l_1
+        else:
+            self.average_transmit_rate = l/(l+1)*self.average_transmit_rate + 1/(l+1)*c_t_l_1   
+        self.best_dual_value = min(self.best_dual_value, v_app + v_phy)        
+        primal_value = self.util(cp.Variable(len(self.average_transmit_rate), value=self.average_transmit_rate)).value
+        self.iteration += 1
+
+        return self.best_dual_value - primal_value
 
     def util_fixed_fractions(self, fractions, util, q_min, q_max):
         return timesharing_fixed_fractions(util, fractions, self.users_per_mode, self.As_per_mode, q_min, q_max)
@@ -49,7 +82,7 @@ class Transmitter:
 class Network:
     def __init__(self, transmitters : Transmitter):
 
-        self.transmitters = transmitters
+        self.transmitters : dict[int, Transmitter] = transmitters
         self.users = []
         self.modes = []
         for t in transmitters.values():
@@ -194,23 +227,51 @@ def app_layer(weights):
 def comp_resources_dual_subgradient(util, q_min, q_max, network: Network):
     n_users = len(q_min)
     weights = np.ones(n_users)
+    for transmitter in network.transmitters.values():
+        transmitter.util = util
+        transmitter.q_min = q_min[transmitter.users]
+        transmitter.q_max = q_max[transmitter.users]
     for n in range(1, 1000):
         # wsr_per_mode_and_transmitter
-        values, A_max = network.wsr_per_mode_and_transmitter(weights)
+        values, _ = network.wsr_per_mode_and_transmitter(weights)
         w_m = {m: sum(w_m_t.values()) for m, w_m_t in values.items()}
-        m_opt, v_phy = max(w_m.items(), key = lambda k : k[1]) 
+        m_opt, _ = max(w_m.items(), key = lambda k : k[1]) 
 
-        
+        gap = 0
+        for transmitter in network.transmitters.values():
+            gap += transmitter.update_weights(m_opt)
+
+        LOGGER.info(f"Network: Iterabtion {n} - Gap {gap}")
+        if gap <= 0.01:
+            break
+    rates = np.zeros(len(q_min))
+    for transmitter in network.transmitters.values():
+        rates[transmitter.users] += transmitter.average_transmit_rate
+    return sum(np.log(rates)), rates, None, None
+
+# algorithm 2
+def optimize_network_app_network(util, q_min, q_max, network: Network):
+
+    n_users = len(q_min)
+
+
+    for n in range(1, 1000):
+        approx_value, _, alphas, [weights, _, _, _, _, _] = timesharing_network(util, network, q_min, q_max)                                                           
+
         q_app = np.minimum(q_max, np.maximum(q_min, 1 / weights))
         q_app[weights <= 0] = q_max[weights <= 0]
         v_app = sum(np.log(q_app)) - weights @ q_app
-        # TODO, how can we calculate this?
-        approx_value = None
+
+        # wsr_per_mode_and_transmitter
+        values, A_max = network.wsr_per_mode_and_transmitter(weights)
+        v_phy = max([sum(v.values()) for v in values.values()])
    
         dual_value = v_app + v_phy
         LOGGER.info(f"Network: Iterabtion {n} - Dual Approximation {approx_value} - Dual Value {dual_value}")
         if abs(dual_value - approx_value) < 0.001:
             break
+
+    return approx_value, q_app, alphas
 
 # algorithm 4
 def optimize_network_explict(util, q_min, q_max, network: Network):

@@ -9,6 +9,7 @@ from mcm.algorithms import (optimize_dual_decomp_subgradient,
 
 from mcm.network_optimization import (I_C, I_C_Q, Network, dual_problem_app,
                                       optimize_app_phy, Transmitter,
+                                      comp_resources_dual_subgradient,
                                       optimize_network_app_network,
                                       optimize_network_app_phy,
                                       optimize_network_explict,
@@ -130,6 +131,10 @@ def test_global_network(users_per_mode_and_transmitter, As, network, seed):
     verfiy_fractional_schedule(alphas_network)
 
     # Calculate by approximation algorithm
+    network.reset_approximation()
+    opt_value, opt_q, _, _ = comp_resources_dual_subgradient(proportional_fair, q_min, q_max, network)
+    assert opt_value == pytest.approx(value, 1e-2)
+    assert opt_q == pytest.approx(rates, rel=1e-1, abs=1e-1)
     network.reset_approximation()
     opt_value, opt_q, _, _ = optimize_network_app_phy(proportional_fair, q_min, q_max, network)
     assert opt_value == pytest.approx(value, 1e-2)
