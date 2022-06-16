@@ -56,7 +56,10 @@ def test_fixed_f():
     users_per_mode_and_transmitter, As, network = test_network(20, np.random.random)
     q_min = np.array([0.05] * 30)
     q_max = np.array([20.0] * 30)
-    value, rates, alphas_network, [d_rates, w_min, w_max, d_f_network, d_sum_f, d_c_m_t] = timesharing_network(proportional_fair, users_per_mode_and_transmitter, As, q_min, q_max)
+    for mode, t_and_rates in As.items():
+        for t, t_rates in t_and_rates.items():
+            network.transmitters[t].As_per_mode[mode] = t_rates 
+    value, rates, alphas_network, [d_rates, w_min, w_max, d_f_network, d_sum_f, d_c_m_t] = timesharing_network(proportional_fair, network, q_min, q_max)
     # verfiy the dual variables
     assert 1/rates == pytest.approx(d_rates, 1e-2)
     assert w_min == pytest.approx(np.zeros(len(w_min)), rel=1e-3, abs=1e-3)
@@ -101,10 +104,8 @@ def test_fixed_f():
         for alphas in alphas_per_transmitter.values():
             fractions[mode] = sum(alphas)
             break
-    for mode, t_and_rates in As.items():
-        for t, t_rates in t_and_rates.items():
-            network.transmitters[t].As_per_mode[mode] = t_rates        
-    v_n, r_n, alphas_n, d_f_n, F_t = network.util_fixed_fractions(fractions, proportional_fair, q_min, q_max)
+       
+    v_n, r_n, alphas_n, d_f_n, F_t = network.scheduling(fractions, proportional_fair, q_min, q_max)
     assert v_n == pytest.approx(value, 1e-3)
     assert r_n == pytest.approx(rates, 1e-3)
     for t, d_f_t_n in d_f_n.items():
@@ -121,27 +122,27 @@ def test_global_network(users_per_mode_and_transmitter, As, network, seed):
     #q_min[0] = 0.5
     q_max = np.array([10.0] * 30)
     #q_max[29] = 0.15
-    value, rates, alphas_network, [user_rates, w_min, w_max, d_f_network, d_sum_f, d_c_m_t] = timesharing_network(proportional_fair, users_per_mode_and_transmitter, As, q_min, q_max)
+    network.initialize_approximation(As)
+    value, rates, alphas_network, [user_rates, w_min, w_max, d_f_network, d_sum_f, d_c_m_t] = timesharing_network(proportional_fair, network, q_min, q_max)
  
     assert all(rates >= q_min*0.97)
     assert all(rates*0.97 <= q_max)
     verfiy_fractional_schedule(alphas_network)
 
     # Calculate by approximation algorithm
+    network.reset_approximation()
     opt_value, opt_q, _, _ = optimize_network_app_phy(proportional_fair, q_min, q_max, network)
     assert opt_value == pytest.approx(value, 1e-2)
     assert opt_q == pytest.approx(rates, rel=1e-1, abs=1e-1)
 
-
+    network.reset_approximation()
     opt_value_network, opt_q_network, alphas = optimize_network_app_network(proportional_fair, q_min, q_max, network)
     assert opt_value_network == pytest.approx(value, 1e-3)
     assert opt_q_network == pytest.approx(rates, rel=1e-1, abs=1e-1)
     
     # scheduling works on the approximations, let us assume here the approximation
     # is the full timesharing
-    for mode, trans_and_At in As.items():
-        for trans, At in trans_and_At.items():
-            network.transmitters[trans].As_per_mode[mode] = At
+    network.initialize_approximation(As)
     opt_value_explicit, opt_q_explicit = optimize_network_explict(proportional_fair, q_min, q_max, network)
     assert opt_value_explicit == pytest.approx(value, 1e-3)
     assert opt_q_explicit == pytest.approx(rates, rel=1e-1, abs=1e-1)

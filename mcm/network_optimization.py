@@ -11,6 +11,7 @@ from numpy.lib.arraysetops import unique
 
 
 import numpy.random
+from pytest import approx
 
 from .utils import InfeasibleOptimization
 LOGGER = logging.getLogger(__name__)
@@ -61,16 +62,21 @@ class Network:
     #    value, rates, _, _ = timesharing_network(weighted_sum_rate(weights), self.users_per_mode_and_transmitter, self.As)
     #    return value, rates
 
+    def initialize_approximation(self, As):
+        for mode, trans_and_At in As.items():
+            for trans, At in trans_and_At.items():
+                self.transmitters[trans].As_per_mode[mode] = At
+
+    def reset_approximation(self):
+        for t in self.transmitters.values():
+            t.As_per_mode = {}
+
 
     def wsr_per_mode(self, weights):
-
         max_value = -np.Inf
         mode_values, A_m = self.wsr_per_mode_and_transmitter(weights)
-        for mode in mode_values:
-            mode_value = sum(mode_values[mode].values())
-            if mode_value > max_value:
-               max_value = mode_value
-               max_mode = mode
+        w_m = {m: sum(w_m_t.values()) for m, w_m_t in mode_values.items()}
+        max_mode, max_value = max(w_m.items(), key = lambda k : k[1]) 
         max_rates = np.zeros(len(weights))
         for transmitter_id, rates in A_m[max_mode].items():
             max_rates[self.transmitters[transmitter_id].users] += rates
@@ -88,12 +94,10 @@ class Network:
                 values[mode][transmitter_id] = val
                 if mode not in A_max:
                     A_max[mode] = {}
-                A_max[mode][transmitter_id] = rates
-
-                
+                A_max[mode][transmitter_id] = rates                
         return values, A_max
 
-    def util_fixed_fractions(self, fractions, util, q_min, q_max):
+    def scheduling(self, fractions, util, q_min, q_max):
         F = 0
         F_t_s = {}
         r = np.zeros(len(self.users))
@@ -186,19 +190,40 @@ def proportional_fair(r):
 def app_layer(weights):
     return lambda r : cp.atoms.affine.sum.Sum(cp.atoms.elementwise.log.log(r)) -  weights @ r
 
+# algorithm 1
+def comp_resources_dual_subgradient(util, q_min, q_max, network: Network):
+    n_users = len(q_min)
+    weights = np.ones(n_users)
+    for n in range(1, 1000):
+        # wsr_per_mode_and_transmitter
+        values, A_max = network.wsr_per_mode_and_transmitter(weights)
+        w_m = {m: sum(w_m_t.values()) for m, w_m_t in values.items()}
+        m_opt, v_phy = max(w_m.items(), key = lambda k : k[1]) 
 
+        
+        q_app = np.minimum(q_max, np.maximum(q_min, 1 / weights))
+        q_app[weights <= 0] = q_max[weights <= 0]
+        v_app = sum(np.log(q_app)) - weights @ q_app
+        # TODO, how can we calculate this?
+        approx_value = None
+   
+        dual_value = v_app + v_phy
+        LOGGER.info(f"Network: Iterabtion {n} - Dual Approximation {approx_value} - Dual Value {dual_value}")
+        if abs(dual_value - approx_value) < 0.001:
+            break
+
+# algorithm 4
 def optimize_network_explict(util, q_min, q_max, network: Network):
     # sum(mu_t) : mu_t <= F_t(f_t_i) - xi_t_i(f - f_t_i) \forall t \forall i, f \in F
     f_equal = 1 / len(network.modes)
     f_t = [{m: f_equal for m in network.modes}]
     d_f_n_s = []
     F_t_s = []
-    max_util = None
+    max_util = - np.Inf
     for i in range(0,100):
         # evaluate F(f)
-        v_n, r_n, alphas_n, d_f_n, F_t = network.util_fixed_fractions(f_t[i], util, q_min, q_max)
-        if max_util is None:
-            max_util = v_n
+        v_n, r_n, alphas_n, d_f_n, F_t = network.scheduling(f_t[i], util, q_min, q_max)
+
         max_util = max(max_util, v_n)
         # evalute approximation
         d_f_n_s.append(d_f_n)
@@ -220,7 +245,6 @@ def optimize_network_explict(util, q_min, q_max, network: Network):
         if prob.value - max_util <= 1e-3:
             break
     return v_n, r_n
-
 
 
 def optimize_network_app_phy(util, q_min, q_max, network):
@@ -260,52 +284,24 @@ def optimize_app_phy(util, q_min, q_max, wsr_phy):
     return approx_value, q, alpha, [la, w_min, w_max, mu]
 
 
-
-
-# TODO make cost function a variable
-# TDOO we neet to find out what we are really doing her?
-# Very likely we are doing the mode competition and keep all approximation points,
-# but we should be able to to better, by using I_C_m_l and a weight for every function
-# Approximation max_{c_m_t ...} V(c_m_t ...) + sum_{m} sum_{t} I_C_m_L(c_m_t)
-# and inner approximation of I_C_m_l
-
-# TODO, Does the approximation problem reformulate?
-
-# compare to (4.97) in the thesis
-def optimize_network_app_network(util, q_min, q_max, network):
+# algorithm5 
+def optimize_network_app_network(util, q_min, q_max, network: Network):
 
     n_users = len(q_min)
     assert len(q_max) == n_users
     # we need to initialize a fake mode that is all q_min
-
-    
-
-    users_per_node_and_transmitter_init = {'init_mode': {}}
-    A_init = {'init_mode': {}}
     for transmitter in network.transmitters.values():
         unique_users = list(set(transmitter.users))
         a = q_min[unique_users]
         a = a.reshape(len(a),1)
-        A_init['init_mode'][transmitter] = a
-        users_per_node_and_transmitter_init['init_mode'][transmitter] = unique_users
+        transmitter.As_per_mode['init'] = a
+        transmitter.users_per_mode['init'] = unique_users
+        transmitter.modes.append('init')
+        transmitter.wsr_per_mode['init'] = I_C(a)
+    network.modes.append('init')
 
     for n in range(1, 1000):
-        users_per_node_and_transmitter_approx = {}
-        for t_id, t in network.transmitters.items():            
-            for mode in t.As_per_mode:
-                if mode not in users_per_node_and_transmitter_approx:
-                    users_per_node_and_transmitter_approx[mode] = {}            
-                users_per_node_and_transmitter_approx[mode][t_id] = t.users_per_mode[mode]
-        users_per_node_and_transmitter_approx.update(users_per_node_and_transmitter_init)
-        A_approx = network.get_As()
-        A_approx.update(A_init)       
-               
-
-        approx_value, rates, alphas, [weights, w_min, w_max, _, _, weights_m_t] = timesharing_network(util,
-                                                                users_per_node_and_transmitter_approx, A_approx,
-                                                                q_min, q_max)
-
-
+        approx_value, _, alphas, [weights, _, _, _, _, _] = timesharing_network(util, network, q_min, q_max)                                                           
 
         q_app = np.minimum(q_max, np.maximum(q_min, 1 / weights))
         q_app[weights <= 0] = q_max[weights <= 0]
@@ -416,45 +412,34 @@ def timesharing_fixed_fractions(cost_function, f, users_per_mode, As, q_min = No
             {mode: c.dual_value for mode, c in c_m_constraints.items()}
         ])
 
-def timesharing_network(cost_function, users_per_mode_and_transmitter, As, q_min = None, q_max = None):
+def timesharing_network(cost_function, network, q_min = None, q_max = None):
 
-    alphas = {}
-    for mode, rates_per_transmitter in As.items():
-        alphas[mode] = {}
-        for transmitter, rates in rates_per_transmitter.items():
-            alphas[mode][transmitter] = cp.Variable(rates.shape[1], nonneg=True)
-
-  
+    alphas = {m: {} for m in network.modes}
     r_constraints = {}
-    c_m_t = {}
-    c_m_t_constraints = {}
-    for mode, transmitters_and_users in users_per_mode_and_transmitter.items():
-        c_m_t[mode] = {}
-        c_m_t_constraints[mode] = {}
-        for transmitter, users in transmitters_and_users.items():
-            c_m_t[mode][transmitter] = cp.Variable(len(users), nonneg=True)
+    c_m_t = {m: {} for m in network.modes}
+    c_m_t_constraints = {m: {} for m in network.modes}
 
-            c_m_t_constraints[mode][transmitter] = c_m_t[mode][transmitter] ==  As[mode][transmitter] @ alphas[mode][transmitter]
+    for t_id, transmitter in network.transmitters.items():
+        for mode, rates in transmitter.As_per_mode.items():
+            alphas[mode][t_id] = cp.Variable(rates.shape[1], nonneg=True)
+            users = transmitter.users_per_mode[mode]
+            c_m_t[mode][t_id] = cp.Variable(len(users), nonneg=True)
+            c_m_t_constraints[mode][t_id] = c_m_t[mode][t_id] == transmitter.As_per_mode[mode] @ alphas[mode][t_id]
             for user_index, user in enumerate(users):
-                constraint = c_m_t[mode][transmitter][user_index]
+                constraint = c_m_t[mode][t_id][user_index]
                 if user in r_constraints:
                     r_constraints[user] += constraint
                 else:
-                    r_constraints[user] = constraint
-
-
+                    r_constraints[user] = constraint          
 
     n_users = len(r_constraints)
     r = cp.Variable(n_users, nonneg=True)
     user_rate_constraints = [r_k == r_constraints[user] for user, r_k in enumerate(r)]
     cost = cost_function(r)
-    if q_min is None:
-        q_min = np.zeros(r.size)
-    if q_max is None:
-        q_max = np.ones(n_users) * 10 #np.squeeze(np.asarray(np.amax(A,1)))
 
     c2 = r >= q_min
     c3 = r <= q_max
+
     sums_alpha_per_mode = cp.Variable(len(alphas), nonneg=True)
     c5 = []
     sums_alpha_per_mode_constraints = {}
@@ -464,6 +449,7 @@ def timesharing_network(cost_function, users_per_mode_and_transmitter, As, q_min
             con = cp.sum(alpha) == sum_m
             sums_alpha_per_mode_constraints[mode][transmitter] = con
             c5.append(con)
+
 
     c6 = cp.sum(sums_alpha_per_mode) == 1
     c_m_t_constraints_list = []
@@ -478,9 +464,6 @@ def timesharing_network(cost_function, users_per_mode_and_transmitter, As, q_min
         raise InfeasibleOptimization()
     assert 'optimal' in prob.status
 
-
-
-
     return (
         prob.value, 
         r.value, 
@@ -492,4 +475,3 @@ def timesharing_network(cost_function, users_per_mode_and_transmitter, As, q_min
             {mode: {t: c.dual_value for t,c in cons.items()} for mode, cons in sums_alpha_per_mode_constraints.items()}, 
             c6.dual_value, 
             {mode: {t:c.dual_value for t,c in cons.items()} for mode, cons in c_m_t_constraints.items() }])
-
