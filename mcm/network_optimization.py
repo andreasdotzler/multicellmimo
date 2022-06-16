@@ -14,12 +14,18 @@ import numpy.random
 
 from .utils import InfeasibleOptimization
 LOGGER = logging.getLogger(__name__)
+from typing import Callable
+
+
+
 
 class Transmitter:
-    def __init__(self, users_per_mode, As_per_mode):
+    def __init__(self, users_per_mode, wsr_per_mode, id=None):
+        self.id = id
         self.users_per_mode : dict[str, list[int]] = users_per_mode
-        self.As_per_mode: dict[str, np.array] = As_per_mode
-        self.modes = list(As_per_mode.keys())
+        self.wsr_per_mode: dict[str, Callable[[np.array],(int, np.array)]] = wsr_per_mode
+        self.As_per_mode: dict[str, np.array] = {}
+        self.modes = list(wsr_per_mode.keys())
         self.users = []
         for users in users_per_mode.values():
             self.users += users
@@ -28,38 +34,28 @@ class Transmitter:
 
     def wsr(self, weights, mode):
         t_weights = weights[self.users_per_mode[mode]]
-        A = self.As_per_mode[mode]
-        max_i = np.argmax(t_weights @ A)
-        rates = A[:, max_i]
-        return t_weights @ rates, rates
+        val, rates = self.wsr_per_mode[mode](t_weights)
+        if mode not in self.As_per_mode:
+            self.As_per_mode[mode] = rates.reshape((len(rates),1))
+        else:
+            self.As_per_mode[mode] = np.c_[self.As_per_mode[mode], rates.reshape((len(rates),1))]
+        return val, rates
 
 
     def util_fixed_fractions(self, fractions, util, q_min, q_max):
         return timesharing_fixed_fractions(util, fractions, self.users_per_mode, self.As_per_mode, q_min, q_max)
 
 class Network:
-    def __init__(self, users_per_mode_and_transmitter, As):
-        self.users_per_mode_and_transmitter = users_per_mode_and_transmitter
-        self.As = As
-        self.transmitters = {}
-        At = {}
-        users_t = {}
-        for mode in As:
-            for transmitter, users in self.users_per_mode_and_transmitter[mode].items():
-                if transmitter not in At:
-                    At[transmitter] = {}
-                At[transmitter][mode] = As[mode][transmitter]
-                if transmitter not in users_t:
-                    users_t[transmitter] = {}
-                users_t[transmitter][mode] = users
-        for transmitter in At:
-            self.transmitters[transmitter] = Transmitter(users_t[transmitter], At[transmitter])
-        users = []
-        for t in self.transmitters.values():
-            users += t.users
-        self.users = list(set(users))    
-        self.modes = list(As.keys())    
+    def __init__(self, transmitters : Transmitter):
 
+        self.transmitters = transmitters
+        self.users = []
+        self.modes = []
+        for t in transmitters.values():
+            self.users += t.users    
+            self.modes += t.modes
+        self.users = list(set(self.users))
+        self.modes = list(set(self.modes))
 
     #def wsr(self, weights):
     #    value, rates, _, _ = timesharing_network(weighted_sum_rate(weights), self.users_per_mode_and_transmitter, self.As)
@@ -67,42 +63,25 @@ class Network:
 
 
     def wsr_per_mode(self, weights):
+
         max_value = -np.Inf
-        max_rates = None
-        _, A_m = self.wsr_per_mode_and_transmitter(weights)
-        for mode in self.As:
-            mode_rates = np.zeros(len(weights))
-            mode_value = 0
-            for transmitter, users in self.users_per_mode_and_transmitter[mode].items():
-                rates = A_m[mode][transmitter]
-                value = weights[users] @ rates
-                mode_rates[users] += rates
-                mode_value += value
+        mode_values, A_m = self.wsr_per_mode_and_transmitter(weights)
+        for mode in mode_values:
+            mode_value = sum(mode_values[mode].values())
             if mode_value > max_value:
-                max_value = mode_value
-                max_rates = mode_rates
+               max_value = mode_value
+               max_mode = mode
+        max_rates = np.zeros(len(weights))
+        for transmitter_id, rates in A_m[max_mode].items():
+            max_rates[self.transmitters[transmitter_id].users] += rates
         assert len(weights) == len(max_rates)
         return max_value, max_rates
 
     def wsr_per_mode_and_transmitter(self, weights):
         values = {}
         A_max = {}
-        # for mode in self.As:
-        #     A_max[mode] = {}
-        #     values[mode] = {}
-        #     for transmitter, users in self.users_per_mode_and_transmitter[mode].items():
-        #         t_weights = weights[users]
-        #         # value, rates =  _, _ = timesharing_network(weighted_sum_rate(weights), {mode: self.users_per_mode_and_transmitter[mode]},
-        #         #                                     {mode: self.As[mode]})
-        #         #value, rates, alpha, lambda_phy = time_sharing(weighted_sum_rate(t_weights), self.As[mode][transmitter])
-        #         A = self.As[mode][transmitter]
-        #         max_i = np.argmax(t_weights @ A)
-        #         rates = A[:, max_i]
-        #         #assert t_weights @ rates == pytest.approx(value, rel=1e3, abs=1e-2)
-        #         A_max[mode][transmitter] = rates
-        #         values[mode][transmitter] = t_weights @ rates
         for transmitter_id, transmitter in self.transmitters.items():
-            for mode in transmitter.As_per_mode:
+            for mode in transmitter.modes:
                 val, rates = transmitter.wsr(weights, mode)
                 if mode not in values:
                     values[mode] = {}
@@ -110,6 +89,7 @@ class Network:
                 if mode not in A_max:
                     A_max[mode] = {}
                 A_max[mode][transmitter_id] = rates
+
                 
         return values, A_max
 
@@ -135,7 +115,13 @@ class Network:
             for user, rate in r_t.items():
                 r[user] += rate
         return F, r, alphas, d_f, F_t_s       
-      
+    
+    def get_As(self):
+        As = {m: {} for m in self.modes}
+        for t_id, t in self.transmitters.items():
+            for mode in t.modes:
+                As[mode][t_id] = t.As_per_mode[mode]
+        return As
 
 
 # TODO we can use time_sharing network for the approximation
@@ -154,8 +140,17 @@ class Network:
 # verify the normal cone thing
 
 # These tow functions are my very strange way to build a wsr from the time_sharing use an object
-def I_C(A):
+def I_C_s(A):
     return lambda weights: time_sharing_no_duals(weighted_sum_rate(weights), A)
+
+def wsr_for_A(weights, A):
+    max_i = np.argmax(weights @ A)
+    rates = A[:, max_i]
+    return weights @ rates, rates
+
+def I_C(A):
+    return lambda weights: wsr_for_A(weights, A)
+
 
 
 def I_C_Q(A, q_min, q_max):
@@ -282,46 +277,35 @@ def optimize_network_app_network(util, q_min, q_max, network):
     n_users = len(q_min)
     assert len(q_max) == n_users
     # we need to initialize a fake mode that is all q_min
-    users_per_transmitter = {}
-    users_per_node_and_transmitter_approx = {'init_mode': {}}
-    for mode in network.As:
-        users_per_node_and_transmitter_approx[mode] = {}
-        for transmitter, users in network.users_per_mode_and_transmitter[mode].items():
-            if transmitter not in users_per_transmitter:
-                users_per_transmitter[transmitter] = []
-            users_per_transmitter[transmitter] += users
 
-    A_approx = {}
-    A_approx['init_mode'] = {}
-    for transmitter, users in users_per_transmitter.items():
-        unique_users = list(set(users))
+    
+
+    users_per_node_and_transmitter_init = {'init_mode': {}}
+    A_init = {'init_mode': {}}
+    for transmitter in network.transmitters.values():
+        unique_users = list(set(transmitter.users))
         a = q_min[unique_users]
         a = a.reshape(len(a),1)
-        A_approx['init_mode'][transmitter] = a
-        users_per_node_and_transmitter_approx['init_mode'][transmitter] = unique_users
+        A_init['init_mode'][transmitter] = a
+        users_per_node_and_transmitter_init['init_mode'][transmitter] = unique_users
 
     for n in range(1, 1000):
-        # create and solve the approximated problem
-
-        # time_sharing_network
+        users_per_node_and_transmitter_approx = {}
+        for t_id, t in network.transmitters.items():            
+            for mode in t.As_per_mode:
+                if mode not in users_per_node_and_transmitter_approx:
+                    users_per_node_and_transmitter_approx[mode] = {}            
+                users_per_node_and_transmitter_approx[mode][t_id] = t.users_per_mode[mode]
+        users_per_node_and_transmitter_approx.update(users_per_node_and_transmitter_init)
+        A_approx = network.get_As()
+        A_approx.update(A_init)       
+               
 
         approx_value, rates, alphas, [weights, w_min, w_max, _, _, weights_m_t] = timesharing_network(util,
                                                                 users_per_node_and_transmitter_approx, A_approx,
                                                                 q_min, q_max)
 
-        import pytest
 
-        assert 1 / rates + w_min - w_max - weights == pytest.approx(np.zeros(len(rates)), rel=1e-2, abs=1e-1)
-        for mode, A_approx_ts in A_approx.items():
-            for transmitter, A_m_t in A_approx_ts.items():
-                q_m_t = A_m_t @ alphas[mode][transmitter]
-                assert all(weights_m_t[mode][transmitter] @ (A_m_t * sum(alphas[mode][transmitter]) - q_m_t.reshape(len(q_m_t), 1)) <= 0.001)
-        #is lambda the same for them by definition of our duality?
-        # V(c_1_1, ... , c_m_t) = max_{f, q_1, q_t} {sum_t U_t(q_t) : q_t in Q_t, q_t = sum_{f_1, ..., f_m} f_m*c_m_t, f in F}
-        # V*(l_1_1, ... , l_m_t) = max_{f, q_1, q_t} {sum_t U_t(q_t) - l_m_t @ c_m_t : q_t in Q_t, q_t = sum_{f_1, ..., f_m} f_m*c_m_t, f in F}
-        # ==> we pick the cheapest mode to maximize?
-        # maybe we realy need to solve a different approximation problem? Or reconstruct weigths for a different but equivalen problem
-        # TDODO we need to verify the weights here
 
         q_app = np.minimum(q_max, np.maximum(q_min, 1 / weights))
         q_app[weights <= 0] = q_max[weights <= 0]
@@ -329,33 +313,8 @@ def optimize_network_app_network(util, q_min, q_max, network):
 
         # wsr_per_mode_and_transmitter
         values, A_max = network.wsr_per_mode_and_transmitter(weights)
-        # compute the maximal mode
-        max_mode = None
-        max_val = None
-        for mode, transmitter_values in values.items():
-            sum_vals = 0
-            for val in transmitter_values.values():
-                sum_vals += val
-            if max_mode is None:
-                max_mode = mode
-                max_val = sum_vals
-            else:
-                if sum_vals > max_val:
-                    max_val = sum_vals
-                    max_mode = mode
-        v_phy = max_val
-
-        # update the approximation
-        for mode, rates_per_transmitter in A_max.items():
-            if mode not in A_approx:
-                A_approx[mode] = {}
-            for transmitter, rates in rates_per_transmitter.items():
-                if transmitter not in A_approx[mode]:
-                    users_per_node_and_transmitter_approx[mode][transmitter] = network.users_per_mode_and_transmitter[mode][transmitter]
-                    A_approx[mode][transmitter] = rates.reshape((len(rates),1))
-                else:
-                    A_approx[mode][transmitter] = np.c_[A_approx[mode][transmitter], rates.reshape((len(rates),1))]
-
+        v_phy = max([sum(v.values()) for v in values.values()])
+   
         dual_value = v_app + v_phy
         LOGGER.info(f"Network: Iterabtion {n} - Dual Approximation {approx_value} - Dual Value {dual_value}")
         if abs(dual_value - approx_value) < 0.001:
@@ -464,7 +423,6 @@ def timesharing_network(cost_function, users_per_mode_and_transmitter, As, q_min
         alphas[mode] = {}
         for transmitter, rates in rates_per_transmitter.items():
             alphas[mode][transmitter] = cp.Variable(rates.shape[1], nonneg=True)
-
 
   
     r_constraints = {}

@@ -8,7 +8,7 @@ from mcm.algorithms import (optimize_dual_decomp_subgradient,
                             optimize_primal_sub)
 
 from mcm.network_optimization import (I_C, I_C_Q, Network, dual_problem_app,
-                                      optimize_app_phy, Network,
+                                      optimize_app_phy, Transmitter,
                                       optimize_network_app_network,
                                       optimize_network_app_phy,
                                       optimize_network_explict,
@@ -33,35 +33,45 @@ def test_network(n_rate_points_per_mode_and_transmitter = 20, sample_function=np
     }
 
     As = {}
+    transmitters = {}
+    wsr_transmitter_mode = {}
+    users_transmitter_mode = {}
     for mode, transmitters_and_users in users_per_mode_and_transmitter.items():
         Am = As[mode] = {}
         for t, users in transmitters_and_users.items():
             Am[t] = sample_function((len(users), n_rate_points_per_mode_and_transmitter))
             if mode == 'reuse1':
                 Am[t] = Am[t] * 1 / 3
-    return Network(users_per_mode_and_transmitter, As)
+            if t not in wsr_transmitter_mode:
+                wsr_transmitter_mode[t] = {}
+                users_transmitter_mode[t] = {}
+            wsr_transmitter_mode[t][mode] = I_C(Am[t])
+            users_transmitter_mode[t][mode] = users
+    for t in wsr_transmitter_mode:
+        transmitters[t] = Transmitter(users_transmitter_mode[t], wsr_transmitter_mode[t], t)
+    return users_per_mode_and_transmitter, As, Network(transmitters)
 
 
 def test_fixed_f():
-    network = test_network(20, np.random.random)
-    q_min = np.array([0.1] * 30)
-    q_max = np.array([10.0] * 30)
-    value, rates, alphas_network, [d_rates, w_min, w_max, d_f_network, d_sum_f, d_c_m_t] = timesharing_network(proportional_fair, network.users_per_mode_and_transmitter, network.As, q_min, q_max)
+    users_per_mode_and_transmitter, As, network = test_network(20, np.random.random)
+    q_min = np.array([0.05] * 30)
+    q_max = np.array([20.0] * 30)
+    value, rates, alphas_network, [d_rates, w_min, w_max, d_f_network, d_sum_f, d_c_m_t] = timesharing_network(proportional_fair, users_per_mode_and_transmitter, As, q_min, q_max)
     # verfiy the dual variables
-    assert 1/rates == pytest.approx(d_rates, 1e-3)
+    assert 1/rates == pytest.approx(d_rates, 1e-2)
     assert w_min == pytest.approx(np.zeros(len(w_min)), rel=1e-3, abs=1e-3)
     assert w_min == pytest.approx(np.zeros(len(w_max)), rel=1e-3, abs=1e-3)
 
     la_m = {}
     c_m = {}
     f_cal = {}
-    for mode, Am  in network.As.items():
+    for mode, Am  in As.items():
         la_m[mode] = 0
         c_m[mode] = np.zeros(len(rates))        
         for t, A in Am.items():
             c_m_t = A@alphas_network[mode][t]
             f_cal[mode] = sum(alphas_network[mode][t])
-            users = network.users_per_mode_and_transmitter[mode][t]
+            users = users_per_mode_and_transmitter[mode][t]
             # c_m_t rescaled to 100% resources
             if sum(alphas_network[mode][t]) >= 1e-3:
                 c_m[mode][users] += 1/sum(alphas_network[mode][t]) * c_m_t
@@ -91,25 +101,27 @@ def test_fixed_f():
         for alphas in alphas_per_transmitter.values():
             fractions[mode] = sum(alphas)
             break
-
+    for mode, t_and_rates in As.items():
+        for t, t_rates in t_and_rates.items():
+            network.transmitters[t].As_per_mode[mode] = t_rates        
     v_n, r_n, alphas_n, d_f_n, F_t = network.util_fixed_fractions(fractions, proportional_fair, q_min, q_max)
     assert v_n == pytest.approx(value, 1e-3)
     assert r_n == pytest.approx(rates, 1e-3)
     for t, d_f_t_n in d_f_n.items():
         for mode, d in d_f_t_n.items():
-            assert d == pytest.approx(d_f_network[mode][t])
+            assert d == pytest.approx(d_f_network[mode][t], 1e-3)
 
 @pytest.fixture(scope="function")
 def seed():
     np.random.seed(41)
 
-@pytest.mark.parametrize("network", [test_network(), test_network(20, np.random.random)])
-def test_global_network(network, seed):
+@pytest.mark.parametrize("users_per_mode_and_transmitter, As, network", [test_network(), test_network(20, np.random.random)])
+def test_global_network(users_per_mode_and_transmitter, As, network, seed):
     q_min = np.array([0.1] * 30)
     #q_min[0] = 0.5
     q_max = np.array([10.0] * 30)
     #q_max[29] = 0.15
-    value, rates, alphas_network, [user_rates, w_min, w_max, d_f_network, d_sum_f, d_c_m_t] = timesharing_network(proportional_fair, network.users_per_mode_and_transmitter, network.As, q_min, q_max)
+    value, rates, alphas_network, [user_rates, w_min, w_max, d_f_network, d_sum_f, d_c_m_t] = timesharing_network(proportional_fair, users_per_mode_and_transmitter, As, q_min, q_max)
  
     assert all(rates >= q_min*0.97)
     assert all(rates*0.97 <= q_max)
@@ -124,7 +136,12 @@ def test_global_network(network, seed):
     opt_value_network, opt_q_network, alphas = optimize_network_app_network(proportional_fair, q_min, q_max, network)
     assert opt_value_network == pytest.approx(value, 1e-3)
     assert opt_q_network == pytest.approx(rates, rel=1e-1, abs=1e-1)
-
+    
+    # scheduling works on the approximations, let us assume here the approximation
+    # is the full timesharing
+    for mode, trans_and_At in As.items():
+        for trans, At in trans_and_At.items():
+            network.transmitters[trans].As_per_mode[mode] = At
     opt_value_explicit, opt_q_explicit = optimize_network_explict(proportional_fair, q_min, q_max, network)
     assert opt_value_explicit == pytest.approx(value, 1e-3)
     assert opt_q_explicit == pytest.approx(rates, rel=1e-1, abs=1e-1)

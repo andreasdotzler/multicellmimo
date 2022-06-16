@@ -117,19 +117,7 @@ def test_timesharing_fair(A):
 
 
 
-    
-    # fails on q_min, q_max
-    #opt_value_primal_sub_projected, opt_q_primal_sub_projected, _ = optimize_primal_subgradient_projected(q_min, q_max, A)
-    #assert opt_value_primal_sub_projected == pytest.approx(value, 1e-3)
-    #assert opt_q_primal_sub_projected == pytest.approx(rates, rel=1e-1, abs=1e-1)
-
-    #opt_value_dual_subgradient, opt_q_dual_subgradient = optimize_dual_decomp_subgradient(proportional_fair, q_min, q_max, I_C(A))
-    #assert opt_value_dual_subgradient == pytest.approx(value, 1e-3)
-    #assert opt_q_dual_subgradient == pytest.approx(rates, rel=1e-1, abs=1e-1)
-
-    opt_value_dual_approx, opt_q_dual_approx = optimize_dual_cuttingplane(proportional_fair, q_min, q_max, I_C(A))
-    assert opt_value_dual_approx == pytest.approx(value, 1e-3)
-    assert opt_q_dual_approx == pytest.approx(rates, rel=1e-1, abs=1e-1)
+  
 
 
 def dual_problem_phy(A, weights):
