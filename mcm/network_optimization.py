@@ -44,11 +44,13 @@ class Transmitter:
         self.iteration = 0
         self.best_dual_value = np.Inf
 
-    def wsr_local_weights(self, mode):
-        return self.wsr(self.weights, mode)
 
-    def wsr(self, weights, mode):        
-        t_weights = weights[self.users_per_mode[mode]]
+
+    def wsr(self, weights, mode):
+        if weights is None:
+            t_weights = self.weights
+        else:
+            t_weights = weights[self.users_per_mode[mode]]
         val, rates = self.wsr_per_mode[mode](t_weights)
         if mode not in self.As_per_mode:
             self.As_per_mode[mode] = rates.reshape((len(rates),1))
@@ -57,7 +59,10 @@ class Transmitter:
         return val, rates
 
     def update_weights(self, m_opt):
-        c_t_l_1 = self.As_per_mode[m_opt][:,-1]
+        if m_opt in self.As_per_mode:
+            c_t_l_1 = self.As_per_mode[m_opt][:,-1]
+        else:
+            c_t_l_1 = np.zeros_like(self.weights)
         ## TODO elevate this to all users!
         # = np.zeros(len(self.users))
         #c_t_l_1[self.users_per_mode[m_opt]] += c_opt
@@ -70,11 +75,11 @@ class Transmitter:
             self.average_transmit_rate = c_t_l_1
         else:
             self.average_transmit_rate = l/(l+1)*self.average_transmit_rate + 1/(l+1)*c_t_l_1   
-        self.best_dual_value = min(self.best_dual_value, v_app + v_phy)        
+                
         primal_value = self.util(cp.Variable(len(self.average_transmit_rate), value=self.average_transmit_rate)).value
         self.iteration += 1
 
-        return self.best_dual_value - primal_value
+        return primal_value,  v_app + v_phy
 
     def util_fixed_fractions(self, fractions, util, q_min, q_max):
         return timesharing_fixed_fractions(util, fractions, self.users_per_mode, self.As_per_mode, q_min, q_max)
@@ -116,7 +121,7 @@ class Network:
         assert len(weights) == len(max_rates)
         return max_value, max_rates
 
-    def wsr_per_mode_and_transmitter(self, weights):
+    def wsr_per_mode_and_transmitter(self, weights=None):
         values = {}
         A_max = {}
         for transmitter_id, transmitter in self.transmitters.items():
@@ -226,22 +231,29 @@ def app_layer(weights):
 # algorithm 1
 def comp_resources_dual_subgradient(util, q_min, q_max, network: Network):
     n_users = len(q_min)
-    weights = np.ones(n_users)
+    best_dual_value = np.Inf
     for transmitter in network.transmitters.values():
         transmitter.util = util
         transmitter.q_min = q_min[transmitter.users]
         transmitter.q_max = q_max[transmitter.users]
     for n in range(1, 1000):
         # wsr_per_mode_and_transmitter
-        values, _ = network.wsr_per_mode_and_transmitter(weights)
+        values, _ = network.wsr_per_mode_and_transmitter(weights=None)
+
         w_m = {m: sum(w_m_t.values()) for m, w_m_t in values.items()}
         m_opt, _ = max(w_m.items(), key = lambda k : k[1]) 
 
-        gap = 0
+        dual_value = 0
+        primal_value = 0
         for transmitter in network.transmitters.values():
-            gap += transmitter.update_weights(m_opt)
-
-        LOGGER.info(f"Network: Iterabtion {n} - Gap {gap}")
+            p,d = transmitter.update_weights(m_opt)
+            dual_value += d
+            primal_value += p
+        assert dual_value >= primal_value
+        best_dual_value = min(best_dual_value, dual_value)
+        gap = (best_dual_value - primal_value) / abs(best_dual_value)
+        LOGGER.info(f"Network: Iterabtion {n} - mopt {m_opt} - primal value {primal_value} - gap {gap}")
+        
         if gap <= 0.01:
             break
     rates = np.zeros(len(q_min))
@@ -249,65 +261,7 @@ def comp_resources_dual_subgradient(util, q_min, q_max, network: Network):
         rates[transmitter.users] += transmitter.average_transmit_rate
     return sum(np.log(rates)), rates, None, None
 
-# algorithm 2
-def optimize_network_app_network(util, q_min, q_max, network: Network):
-
-    n_users = len(q_min)
-
-
-    for n in range(1, 1000):
-        approx_value, _, alphas, [weights, _, _, _, _, _] = timesharing_network(util, network, q_min, q_max)                                                           
-
-        q_app = np.minimum(q_max, np.maximum(q_min, 1 / weights))
-        q_app[weights <= 0] = q_max[weights <= 0]
-        v_app = sum(np.log(q_app)) - weights @ q_app
-
-        # wsr_per_mode_and_transmitter
-        values, A_max = network.wsr_per_mode_and_transmitter(weights)
-        v_phy = max([sum(v.values()) for v in values.values()])
-   
-        dual_value = v_app + v_phy
-        LOGGER.info(f"Network: Iterabtion {n} - Dual Approximation {approx_value} - Dual Value {dual_value}")
-        if abs(dual_value - approx_value) < 0.001:
-            break
-
-    return approx_value, q_app, alphas
-
-# algorithm 4
-def optimize_network_explict(util, q_min, q_max, network: Network):
-    # sum(mu_t) : mu_t <= F_t(f_t_i) - xi_t_i(f - f_t_i) \forall t \forall i, f \in F
-    f_equal = 1 / len(network.modes)
-    f_t = [{m: f_equal for m in network.modes}]
-    d_f_n_s = []
-    F_t_s = []
-    max_util = - np.Inf
-    for i in range(0,100):
-        # evaluate F(f)
-        v_n, r_n, alphas_n, d_f_n, F_t = network.scheduling(f_t[i], util, q_min, q_max)
-
-        max_util = max(max_util, v_n)
-        # evalute approximation
-        d_f_n_s.append(d_f_n)
-        F_t_s.append(F_t)
-        mu = {}
-        t_cons = []
-        f = {mode: cp.Variable(1, nonneg=True) for mode in network.modes}
-        for t in network.transmitters:
-            mu[t] = cp.Variable(1)
-            for j in range(i+1):
-                t_cons.append(mu[t] <= F_t_s[j][t] + cp.sum([d_f_n_s[j][t][m]*(f[m] - f_t[j][m]) for m in d_f_n_s[j][t].keys()]))
-        sum_con = [cp.sum(list(f.values())) == 1]
-        prob = cp.Problem(cp.Maximize(cp.sum(list(mu.values()))), sum_con + t_cons)
-        prob.solve()
-        LOGGER.info(f"Explicit: Iteration {i} - Approximation {prob.value} - Best Primal Value {max_util}")
-        assert prob.status == 'optimal'
-        # solve
-        f_t.append({m: ff.value[0] for m, ff in f.items()})
-        if prob.value - max_util <= 1e-3:
-            break
-    return v_n, r_n
-
-
+# algorithm2 
 def optimize_network_app_phy(util, q_min, q_max, network):
     return optimize_app_phy(util, q_min, q_max, network.wsr_per_mode)
 
@@ -344,6 +298,88 @@ def optimize_app_phy(util, q_min, q_max, wsr_phy):
             break
     return approx_value, q, alpha, [la, w_min, w_max, mu]
 
+# algorithm 3
+def optimize_network_explict_sub(util, q_min, q_max, network: Network):
+    f_equal = 1 / len(network.modes)
+    f_t = {m: f_equal for m in network.modes}
+    max_util = - np.Inf
+    for i in range(0,100):
+        # evaluate F(f)
+        v_n, r_n, alphas_n, d_f_t_m, F_t = network.scheduling(f_t, util, q_min, q_max)
+
+        # evalute approximation
+        # project gradient 
+        constraints = []  
+        d_f = {m: 0 for m in network.modes}
+        for t, d_f_m in d_f_t_m.items():
+            for m, d_f_i in d_f_m.items():
+                d_f[m] += d_f_i
+        sum_d_f = sum(d_f.values())
+        d_f = {m : v / sum_d_f for m,v in d_f.items()}
+        f_t_new = cp.Variable(len(network.modes), nonneg=True)
+        f_t_new = {m: cp.Variable(1, nonneg=True) for m in network.modes}
+        
+        for n in range(100):
+            u = [cp.sum_squares(f_t_new[m] - (f_t[m] + 1/(n+1)* d_f[m])) for m in network.modes]
+            prob = cp.Problem(cp.Minimize(cp.sum(u)),[sum(f_t_new.values()) == 1])
+            prob.solve()
+            try:
+                f_temp = {m: f.value for m,f in f_t_new.items()}
+                network.scheduling(f_temp, util, q_min, q_max)
+                break
+            except InfeasibleOptimization:
+                LOGGER.info(f"Infeasible for {f_temp}")
+                pass
+        f_t = {m: f.value for m,f in f_t_new.items()}
+
+        improvement = v_n - max_util      
+        max_util = max(v_n, max_util) 
+        LOGGER.info(f"Explicit: Iteration {i} - Best Primal Value {max_util} - Improvement {improvement}")
+        assert prob.status == 'optimal'
+        # solve
+    
+        if abs(improvement) <= 1e-6:
+            break
+    return v_n, r_n, None, None
+
+
+# algorithm 4
+def optimize_network_explict(util, q_min, q_max, network: Network):
+    # sum(mu_t) : mu_t <= F_t(f_t_i) - xi_t_i(f - f_t_i) \forall t \forall i, f \in F
+    f_equal = 1 / len(network.modes)
+    f_t = [{m: f_equal for m in network.modes}]
+    d_f_n_s = []
+    F_t_s = []
+    max_util = - np.Inf
+    for i in range(0,100):
+        # evaluate F(f)
+        v_n, r_n, alphas_n, d_f_n, F_t = network.scheduling(f_t[i], util, q_min, q_max)
+
+        max_util = max(max_util, v_n)
+        # evalute approximation
+        d_f_n_s.append(d_f_n)
+        F_t_s.append(F_t)
+        mu = {}
+        t_cons = []
+        f = {mode: cp.Variable(1, nonneg=True) for mode in network.modes}
+        for t in network.transmitters:
+            mu[t] = cp.Variable(1)
+            for j in range(i+1):
+                t_cons.append(mu[t] <= F_t_s[j][t] + cp.sum([d_f_n_s[j][t][m]*(f[m] - f_t[j][m]) for m in d_f_n_s[j][t].keys()]))
+        sum_con = [cp.sum(list(f.values())) == 1]
+        prob = cp.Problem(cp.Maximize(cp.sum(list(mu.values()))), sum_con + t_cons)
+        prob.solve()
+        LOGGER.info(f"Explicit: Iteration {i} - Approximation {prob.value} - Best Primal Value {max_util}")
+        assert prob.status == 'optimal'
+        # solve
+        f_t.append({m: ff.value[0] for m, ff in f.items()})
+        if prob.value - max_util <= 1e-3:
+            break
+    return v_n, r_n, None, None
+
+
+
+
 
 # algorithm5 
 def optimize_network_app_network(util, q_min, q_max, network: Network):
@@ -377,7 +413,7 @@ def optimize_network_app_network(util, q_min, q_max, network: Network):
         if abs(dual_value - approx_value) < 0.001:
             break
 
-    return approx_value, q_app, alphas
+    return approx_value, q_app, alphas, None
 
 
 def time_sharing_cvx(cost_function, A, q_min = None, q_max = None):
@@ -460,7 +496,8 @@ def timesharing_fixed_fractions(cost_function, f, users_per_mode, As, q_min = No
     constraints = user_rate_constraints + [c2, c3] + list(c5.values()) + c_m_constraints_list
     prob = cp.Problem(cp.Maximize(cost), constraints)
     prob.solve()
-    assert 'optimal' in prob.status 
+    if 'optimal' not in prob.status:
+        raise InfeasibleOptimization()
     return (
         prob.value, 
         {user: r.value for user, r in zip(users, r)}, 

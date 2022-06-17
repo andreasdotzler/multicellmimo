@@ -13,6 +13,7 @@ from mcm.network_optimization import (I_C, I_C_Q, Network, dual_problem_app,
                                       optimize_network_app_network,
                                       optimize_network_app_phy,
                                       optimize_network_explict,
+                                      optimize_network_explict_sub,
                                       proportional_fair, time_sharing,
                                       time_sharing_cvx, time_sharing_no_duals,
                                       timesharing_network, weighted_sum_rate)
@@ -50,7 +51,7 @@ def test_network(n_rate_points_per_mode_and_transmitter = 20, sample_function=np
             users_transmitter_mode[t][mode] = users
     for t in wsr_transmitter_mode:
         transmitters[t] = Transmitter(users_transmitter_mode[t], wsr_transmitter_mode[t], t)
-    return users_per_mode_and_transmitter, As, Network(transmitters)
+    return As, Network(transmitters)
 
 
 def test_fixed_f():
@@ -116,9 +117,14 @@ def test_fixed_f():
 @pytest.fixture(scope="function")
 def seed():
     np.random.seed(41)
-
-@pytest.mark.parametrize("users_per_mode_and_transmitter, As, network", [test_network(), test_network(20, np.random.random)])
-def test_global_network(users_per_mode_and_transmitter, As, network, seed):
+@pytest.mark.parametrize("algorithm", [comp_resources_dual_subgradient,
+                                      optimize_network_app_phy,
+                                      optimize_network_explict_sub,
+                                      optimize_network_explict,
+                                      optimize_network_app_network                            
+                                      ])
+@pytest.mark.parametrize("As, network", [test_network(), test_network(20, np.random.random)])
+def test_global_network(As, network, algorithm, seed):
     q_min = np.array([0.1] * 30)
     #q_min[0] = 0.5
     q_max = np.array([10.0] * 30)
@@ -129,28 +135,16 @@ def test_global_network(users_per_mode_and_transmitter, As, network, seed):
     assert all(rates >= q_min*0.97)
     assert all(rates*0.97 <= q_max)
     verfiy_fractional_schedule(alphas_network)
-
-    # Calculate by approximation algorithm
+    LOGGER.info(f"expected result: {value}")
     network.reset_approximation()
-    opt_value, opt_q, _, _ = comp_resources_dual_subgradient(proportional_fair, q_min, q_max, network)
-    assert opt_value == pytest.approx(value, 1e-2)
-    assert opt_q == pytest.approx(rates, rel=1e-1, abs=1e-1)
-    network.reset_approximation()
-    opt_value, opt_q, _, _ = optimize_network_app_phy(proportional_fair, q_min, q_max, network)
-    assert opt_value == pytest.approx(value, 1e-2)
-    assert opt_q == pytest.approx(rates, rel=1e-1, abs=1e-1)
-
-    network.reset_approximation()
-    opt_value_network, opt_q_network, alphas = optimize_network_app_network(proportional_fair, q_min, q_max, network)
-    assert opt_value_network == pytest.approx(value, 1e-3)
-    assert opt_q_network == pytest.approx(rates, rel=1e-1, abs=1e-1)
-    
     # scheduling works on the approximations, let us assume here the approximation
     # is the full timesharing
-    network.initialize_approximation(As)
-    opt_value_explicit, opt_q_explicit = optimize_network_explict(proportional_fair, q_min, q_max, network)
-    assert opt_value_explicit == pytest.approx(value, 1e-3)
+    if algorithm in [optimize_network_explict_sub, optimize_network_explict]:
+        network.initialize_approximation(As)
+    opt_value_explicit, opt_q_explicit, _, _ = algorithm(proportional_fair, q_min, q_max, network)
+    assert opt_value_explicit == pytest.approx(value, 1e-2)
     assert opt_q_explicit == pytest.approx(rates, rel=1e-1, abs=1e-1)
+
     
 
 def verfiy_fractional_schedule(alphas):
