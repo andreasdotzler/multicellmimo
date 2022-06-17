@@ -11,7 +11,8 @@ LOGGER = logging.getLogger(__name__)
 # -*- coding: utf-8 -*-
 # https://stackoverflow.com/a/62563106
 import os
-if os.getenv('_PYTEST_RAISE', "0") != "0":
+
+if os.getenv("_PYTEST_RAISE", "0") != "0":
     import pytest
 
     @pytest.hookimpl(tryfirst=True)
@@ -21,6 +22,7 @@ if os.getenv('_PYTEST_RAISE', "0") != "0":
     @pytest.hookimpl(tryfirst=True)
     def pytest_internalerror(excinfo):  # type: ignore
         raise excinfo.value
+
 
 @pytest.fixture(scope="function", autouse=True)
 def seed():

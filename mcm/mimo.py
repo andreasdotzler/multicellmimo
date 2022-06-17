@@ -558,6 +558,7 @@ def project_covariances(Covs: List[Matrix], P: float) -> List[Matrix]:
     assert sum_eigs <= P * 1.01
     return Covs
 
+
 # TODO, let us also do an outer approximation
 def MAC(
     Hs: List[Matrix],

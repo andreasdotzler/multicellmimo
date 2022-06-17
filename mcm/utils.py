@@ -8,6 +8,7 @@ from typing import List
 class InfeasibleOptimization(Exception):
     pass
 
+
 inv = np.linalg.inv
 pinv = np.linalg.pinv
 det = np.linalg.det
