@@ -4,7 +4,7 @@ import random
 import logging
 
 from .context import mcm
-from mcm.utils import eye
+from mcm.mimo_utils import eye
 
 LOGGER = logging.getLogger(__name__)
 
@@ -28,6 +28,14 @@ if os.getenv("_PYTEST_RAISE", "0") != "0":
 def seed():
     np.random.seed(52)
 
+
+
+@pytest.fixture(scope="function", params=[[2, 2], [10, 40]])
+def A(request):
+    if request.param == [2, 2]:
+        return np.array([[1, 0.0], [0.0, 1]]).T
+    else:
+        return np.random.rand(*request.param) * 3
 
 @pytest.fixture()
 def H(Ms_antennas, Bs_antennas, comp=0):

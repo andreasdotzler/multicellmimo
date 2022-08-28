@@ -20,7 +20,7 @@ from mcm.mimo import (
     MAC_cvx_with_noise_sbgr,
 )
 
-from mcm.utils import (
+from mcm.mimo_utils import (
     inv_sqrtm,
     pinv_sqrtm,
     sqrtm,

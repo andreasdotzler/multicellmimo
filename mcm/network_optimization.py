@@ -1,23 +1,14 @@
-"""TODO."""
-import copy
-import random
-
 import cvxpy as cp
-from cvxpy.constraints.nonpos import NonNeg
+
 import numpy as np
 import logging
-import copy
-from numpy.lib.arraysetops import unique
 
 
-import numpy.random
-from pydantic import NoneStr
-from pytest import approx
-
-from .utils import InfeasibleOptimization
+from mcm.timesharing import timesharing_fixed_fractions, time_sharing, timesharing_network, time_sharing_cvx, time_sharing_no_duals
 
 LOGGER = logging.getLogger(__name__)
 from typing import Callable
+
 
 
 class Transmitter:
@@ -95,7 +86,7 @@ class Transmitter:
 
         return primal_value, v_app + v_phy
 
-    def util_fixed_fractions(self, fractions, util, q_min, q_max):
+    def scheduling(self, fractions, util, q_min, q_max):
         return timesharing_fixed_fractions(
             util, fractions, self.users_per_mode, self.As_per_mode, q_min, q_max
         )
@@ -163,7 +154,7 @@ class Network:
                 r_t,
                 alpha_t,
                 [lambdas, w_min, w_max, d_f_t_m, d_c_m],
-            ) = t.util_fixed_fractions(fractions, util, q_min[t.users], q_max[t.users])
+            ) = t.scheduling(fractions, util, q_min[t.users], q_max[t.users])
             for mode, a in alpha_t.items():
                 if mode not in alphas:
                     alphas[mode] = {}
@@ -178,6 +169,15 @@ class Network:
                 r[user] += rate
         return F, r, alphas, d_f, F_t_s
 
+    def create_init_mode(self, q_min):
+        # we need to initialize a fake mode that is all q_min
+        for transmitter in self.transmitters.values():
+            #unique_users = list(set(transmitter.users))
+            for mode in transmitter.modes:
+                a = q_min[transmitter.users_per_mode[mode]]
+                transmitter.As_per_mode[mode] = a.reshape(len(a), 1)
+
+
     def get_As(self):
         As = {m: {} for m in self.modes}
         for t_id, t in self.transmitters.items():
@@ -185,21 +185,30 @@ class Network:
                 As[mode][t_id] = t.As_per_mode[mode]
         return As
 
-
-# TODO we can use time_sharing network for the approximation
-
-# solve the problem U_C_Q directly, difficult with approximation, because a lot -Inf to handle, subgradient should work
-# solve U_Q + I_C check
-# solve U + I_C_Q check
-
-# need to extend to
-# - one phy
-# - one phy per mode
-# - one phy per mode and transmitter
-
-# need the protocol implementations
-
-# verify the normal cone thing
+    def resource_allocation(self, f_t, d_f_n_s, F_t_s):
+        i = len(f_t) - 1
+        mu = {}
+        t_cons = []
+        f = {mode: cp.Variable(1, nonneg=True) for mode in self.modes}
+        for t in self.transmitters:
+            mu[t] = cp.Variable(1)
+            for j in range(i + 1):
+                t_cons.append(
+                        mu[t]
+                        <= F_t_s[j][t]
+                        + cp.sum(
+                            [
+                                d_f_n_s[j][t][m] * (f[m] - f_t[j][m])
+                                for m in d_f_n_s[j][t].keys()
+                            ]
+                        )
+                    )
+        sum_con = [cp.sum(list(f.values())) == 1]
+        prob = cp.Problem(cp.Maximize(cp.sum(list(mu.values()))), sum_con + t_cons)
+        prob.solve()
+        assert prob.status == "optimal"
+        f_new = {m: ff.value[0] for m, ff in f.items()}
+        return prob.value, f_new
 
 # These tow functions are my very strange way to build a wsr from the time_sharing use an object
 def I_C_s(A):
@@ -239,6 +248,24 @@ def dual_problem_app(util, weights, q_max=None, q_min=None):
     #    v_app = sum(np.log(q_app)) - weights @ q_app
     #    assert abs(v_app_1 - v_app) <= 10**-6
 
+def dual_problem_app_f(util, weights_per_mode, f, q_max=None, q_min=None):
+    q = cp.Variable(len(q_max))
+    c_s = {m: cp.Variable(len(w)) for m,w in weights_per_mode.items()}
+
+    cost_dual = util(q) 
+    for m, weights in weights_per_mode.items():
+        cost_dual -= weights @ c_s[m]    
+    const_q = 0
+    for m, c in c_s.items():
+        const_q += f[m]*c
+    constraints_dual = [q == const_q]
+    if q_max is not None:
+        constraints_dual.append(q <= q_max)
+    if q_min is not None:
+        constraints_dual.append(q >= q_min)
+    prob_dual = cp.Problem(cp.Maximize(cost_dual), constraints_dual)
+    prob_dual.solve()
+    return prob_dual.value, q.value, {m: c.value for m,c in c_s.items()}
 
 def weighted_sum_rate(weights):
     return lambda r: weights @ r
@@ -253,47 +280,6 @@ def app_layer(weights):
     return (
         lambda r: cp.atoms.affine.sum.Sum(cp.atoms.elementwise.log.log(r)) - weights @ r
     )
-
-
-# algorithm 1
-def comp_resources_dual_subgradient(util, q_min, q_max, network: Network):
-    n_users = len(q_min)
-    best_dual_value = np.Inf
-    for transmitter in network.transmitters.values():
-        transmitter.util = util
-        transmitter.q_min = q_min[transmitter.users]
-        transmitter.q_max = q_max[transmitter.users]
-    for n in range(1, 1000):
-        # wsr_per_mode_and_transmitter
-        values, _ = network.wsr_per_mode_and_transmitter(weights=None)
-
-        w_m = {m: sum(w_m_t.values()) for m, w_m_t in values.items()}
-        m_opt, _ = max(w_m.items(), key=lambda k: k[1])
-
-        dual_value = 0
-        primal_value = 0
-        for transmitter in network.transmitters.values():
-            p, d = transmitter.update_weights(m_opt)
-            dual_value += d
-            primal_value += p
-        assert dual_value >= primal_value
-        best_dual_value = min(best_dual_value, dual_value)
-        gap = (best_dual_value - primal_value) / abs(best_dual_value)
-        LOGGER.info(
-            f"Network: Iterabtion {n} - mopt {m_opt} - primal value {primal_value} - gap {gap}"
-        )
-
-        if gap <= 0.01:
-            break
-    rates = np.zeros(len(q_min))
-    for transmitter in network.transmitters.values():
-        rates[transmitter.users] += transmitter.average_transmit_rate
-    return sum(np.log(rates)), rates, None, None
-
-
-# algorithm2
-def optimize_network_app_phy(util, q_min, q_max, network):
-    return optimize_app_phy(util, q_min, q_max, network.wsr_per_mode)
 
 
 def optimize_app_phy(util, q_min, q_max, wsr_phy):
@@ -331,323 +317,3 @@ def optimize_app_phy(util, q_min, q_max, wsr_phy):
         if gap < 0.001:
             break
     return approx_value, q, alpha, [la, w_min, w_max, mu]
-
-
-# algorithm 3
-def optimize_network_explict_sub(util, q_min, q_max, network: Network):
-    f_equal = 1 / len(network.modes)
-    f_t = {m: f_equal for m in network.modes}
-    max_util = -np.Inf
-    for i in range(0, 100):
-        # evaluate F(f)
-        v_n, r_n, alphas_n, d_f_t_m, F_t = network.scheduling(f_t, util, q_min, q_max)
-
-        # evalute approximation
-        # project gradient
-        constraints = []
-        d_f = {m: 0 for m in network.modes}
-        for t, d_f_m in d_f_t_m.items():
-            for m, d_f_i in d_f_m.items():
-                d_f[m] += d_f_i
-        sum_d_f = sum(d_f.values())
-        d_f = {m: v / sum_d_f for m, v in d_f.items()}
-        f_t_new = cp.Variable(len(network.modes), nonneg=True)
-        f_t_new = {m: cp.Variable(1, nonneg=True) for m in network.modes}
-
-        for n in range(100):
-            u = [
-                cp.sum_squares(f_t_new[m] - (f_t[m] + 1 / (n + 1) * d_f[m]))
-                for m in network.modes
-            ]
-            prob = cp.Problem(cp.Minimize(cp.sum(u)), [sum(f_t_new.values()) == 1])
-            prob.solve()
-            try:
-                f_temp = {m: f.value for m, f in f_t_new.items()}
-                network.scheduling(f_temp, util, q_min, q_max)
-                break
-            except InfeasibleOptimization:
-                LOGGER.info(f"Infeasible for {f_temp}")
-                pass
-        f_t = {m: f.value for m, f in f_t_new.items()}
-
-        improvement = v_n - max_util
-        max_util = max(v_n, max_util)
-        LOGGER.info(
-            f"Explicit: Iteration {i} - Best Primal Value {max_util} - Improvement {improvement}"
-        )
-        assert prob.status == "optimal"
-        # solve
-
-        if abs(improvement) <= 1e-6:
-            break
-    return v_n, r_n, None, None
-
-
-# algorithm 4
-def optimize_network_explict(util, q_min, q_max, network: Network):
-    # sum(mu_t) : mu_t <= F_t(f_t_i) - xi_t_i(f - f_t_i) \forall t \forall i, f \in F
-    f_equal = 1 / len(network.modes)
-    f_t = [{m: f_equal for m in network.modes}]
-    d_f_n_s = []
-    F_t_s = []
-    max_util = -np.Inf
-    for i in range(0, 100):
-        # evaluate F(f)
-        v_n, r_n, alphas_n, d_f_n, F_t = network.scheduling(f_t[i], util, q_min, q_max)
-
-        max_util = max(max_util, v_n)
-        # evalute approximation
-        d_f_n_s.append(d_f_n)
-        F_t_s.append(F_t)
-        mu = {}
-        t_cons = []
-        f = {mode: cp.Variable(1, nonneg=True) for mode in network.modes}
-        for t in network.transmitters:
-            mu[t] = cp.Variable(1)
-            for j in range(i + 1):
-                t_cons.append(
-                    mu[t]
-                    <= F_t_s[j][t]
-                    + cp.sum(
-                        [
-                            d_f_n_s[j][t][m] * (f[m] - f_t[j][m])
-                            for m in d_f_n_s[j][t].keys()
-                        ]
-                    )
-                )
-        sum_con = [cp.sum(list(f.values())) == 1]
-        prob = cp.Problem(cp.Maximize(cp.sum(list(mu.values()))), sum_con + t_cons)
-        prob.solve()
-        LOGGER.info(
-            f"Explicit: Iteration {i} - Approximation {prob.value} - Best Primal Value {max_util}"
-        )
-        assert prob.status == "optimal"
-        # solve
-        f_t.append({m: ff.value[0] for m, ff in f.items()})
-        if prob.value - max_util <= 1e-3:
-            break
-    return v_n, r_n, None, None
-
-
-# algorithm5
-def optimize_network_app_network(util, q_min, q_max, network: Network):
-
-    n_users = len(q_min)
-    assert len(q_max) == n_users
-    # we need to initialize a fake mode that is all q_min
-    for transmitter in network.transmitters.values():
-        unique_users = list(set(transmitter.users))
-        a = q_min[unique_users]
-        a = a.reshape(len(a), 1)
-        transmitter.As_per_mode["init"] = a
-        transmitter.users_per_mode["init"] = unique_users
-        transmitter.modes.append("init")
-        transmitter.wsr_per_mode["init"] = I_C(a)
-    network.modes.append("init")
-
-    for n in range(1, 1000):
-        approx_value, _, alphas, [weights, _, _, _, _, _] = timesharing_network(
-            util, network, q_min, q_max
-        )
-
-        q_app = np.minimum(q_max, np.maximum(q_min, 1 / weights))
-        q_app[weights <= 0] = q_max[weights <= 0]
-        v_app = sum(np.log(q_app)) - weights @ q_app
-
-        # wsr_per_mode_and_transmitter
-        values, A_max = network.wsr_per_mode_and_transmitter(weights)
-        v_phy = max([sum(v.values()) for v in values.values()])
-
-        dual_value = v_app + v_phy
-        LOGGER.info(
-            f"Network: Iterabtion {n} - Dual Approximation {approx_value} - Dual Value {dual_value}"
-        )
-        if abs(dual_value - approx_value) < 0.001:
-            break
-
-    return approx_value, q_app, alphas, None
-
-
-def time_sharing_cvx(cost_function, A, q_min=None, q_max=None):
-    n_users, n = A.shape
-    r = cp.Variable(n_users, pos=True)
-    cost = cost_function(r)
-
-    if q_min is None:
-        q_min = np.zeros(r.size)
-    if q_max is None:
-        q_max = np.squeeze(np.asarray(np.amax(A, 1)))
-
-    alpha = cp.Variable(n, nonneg=True)
-    c1 = r == A @ alpha
-    c2 = r >= q_min
-    c3 = r <= q_max
-    c5 = cp.sum(alpha) == 1
-    constraints = [c1, c2, c3, c5]
-
-    prob = cp.Problem(cp.Maximize(cost), constraints)
-    prob.solve()
-
-    # check KKT
-    if "infeasible" in prob.status:
-        raise InfeasibleOptimization()
-    assert prob.status == "optimal"
-    return (
-        prob.value,
-        r.value,
-        alpha.value,
-        [c1.dual_value, c2.dual_value, c3.dual_value, c5.dual_value],
-    )
-
-
-def time_sharing(cost_function, A, q_min=None, q_max=None):
-    value, rates, alpha, [lambda_opt, _, _, _] = time_sharing_cvx(
-        cost_function, A, q_min, q_max
-    )
-    return value, rates, alpha, lambda_opt
-
-
-def time_sharing_no_duals(costs_function, A, q_min=None, q_max=None):
-    value, rates, _, _ = time_sharing_cvx(costs_function, A, q_min, q_max)
-    return value, rates
-
-
-def timesharing_fixed_fractions(
-    cost_function, f, users_per_mode, As, q_min=None, q_max=None
-):
-
-    users = []
-    alphas = {}
-    c_m_constraints = {}
-    for mode, rates in As.items():
-        alphas[mode] = cp.Variable(rates.shape[1], nonneg=True)
-        users += users_per_mode[mode]
-
-    users = unique(users)
-    r_constraints = {}
-    c_m = {}
-    for mode, users in users_per_mode.items():
-        c_m[mode] = cp.Variable(len(users), nonneg=True)
-        c_m_constraints[mode] = c_m[mode] == As[mode] @ alphas[mode]
-        for user_index, user in enumerate(users):
-            constraint = c_m[mode][user_index]
-            if user in r_constraints:
-                r_constraints[user] += constraint
-            else:
-                r_constraints[user] = constraint
-
-    n_users = len(r_constraints)
-    r = cp.Variable(n_users, nonneg=True)
-    user_rate_constraints = [r_k == r_constraints[user] for user, r_k in zip(users, r)]
-    cost = cost_function(r)
-    if q_min is None:
-        q_min = np.zeros(r.size)
-
-    if q_max is None:
-        q_max = np.ones(n_users) * 10  # np.squeeze(np.asarray(np.amax(A,1)))
-
-    c2 = r >= q_min
-    c3 = r <= q_max
-    c5 = {}
-    for mode in alphas:
-        c5[mode] = cp.sum(alphas[mode]) == f[mode]
-
-    c_m_constraints_list = []
-    for mode, cons in c_m_constraints.items():
-        c_m_constraints_list.append(cons)
-    constraints = (
-        user_rate_constraints + [c2, c3] + list(c5.values()) + c_m_constraints_list
-    )
-    prob = cp.Problem(cp.Maximize(cost), constraints)
-    prob.solve()
-    if "optimal" not in prob.status:
-        raise InfeasibleOptimization()
-    return (
-        prob.value,
-        {user: r.value for user, r in zip(users, r)},
-        {mode: alpha.value for mode, alpha in alphas.items()},
-        [
-            [c.dual_value for c in user_rate_constraints],
-            c2.dual_value,
-            c3.dual_value,
-            {mode: c.dual_value for mode, c in c5.items()},
-            {mode: c.dual_value for mode, c in c_m_constraints.items()},
-        ],
-    )
-
-
-def timesharing_network(cost_function, network, q_min=None, q_max=None):
-
-    alphas = {m: {} for m in network.modes}
-    r_constraints = {}
-    c_m_t = {m: {} for m in network.modes}
-    c_m_t_constraints = {m: {} for m in network.modes}
-
-    for t_id, transmitter in network.transmitters.items():
-        for mode, rates in transmitter.As_per_mode.items():
-            alphas[mode][t_id] = cp.Variable(rates.shape[1], nonneg=True)
-            users = transmitter.users_per_mode[mode]
-            c_m_t[mode][t_id] = cp.Variable(len(users), nonneg=True)
-            c_m_t_constraints[mode][t_id] = (
-                c_m_t[mode][t_id] == transmitter.As_per_mode[mode] @ alphas[mode][t_id]
-            )
-            for user_index, user in enumerate(users):
-                constraint = c_m_t[mode][t_id][user_index]
-                if user in r_constraints:
-                    r_constraints[user] += constraint
-                else:
-                    r_constraints[user] = constraint
-
-    n_users = len(r_constraints)
-    r = cp.Variable(n_users, nonneg=True)
-    user_rate_constraints = [r_k == r_constraints[user] for user, r_k in enumerate(r)]
-    cost = cost_function(r)
-
-    c2 = r >= q_min
-    c3 = r <= q_max
-
-    sums_alpha_per_mode = cp.Variable(len(alphas), nonneg=True)
-    c5 = []
-    sums_alpha_per_mode_constraints = {}
-    for (mode, alphas_per_mode), sum_m in zip(alphas.items(), sums_alpha_per_mode):
-        sums_alpha_per_mode_constraints[mode] = {}
-        for transmitter, alpha in alphas_per_mode.items():
-            con = cp.sum(alpha) == sum_m
-            sums_alpha_per_mode_constraints[mode][transmitter] = con
-            c5.append(con)
-
-    c6 = cp.sum(sums_alpha_per_mode) == 1
-    c_m_t_constraints_list = []
-    for mode, cons in c_m_t_constraints.items():
-        for con in cons.values():
-            c_m_t_constraints_list.append(con)
-    constraints = user_rate_constraints + [c2, c3] + c5 + [c6] + c_m_t_constraints_list
-    prob = cp.Problem(cp.Maximize(cost), constraints)
-    prob.solve()
-
-    if "infeasible" in prob.status:
-        raise InfeasibleOptimization()
-    assert "optimal" in prob.status
-
-    return (
-        prob.value,
-        r.value,
-        {
-            m: {t: alpha.value for t, alpha in alphas_per_mode.items()}
-            for m, alphas_per_mode in alphas.items()
-        },
-        [
-            np.array([c.dual_value for c in user_rate_constraints]),
-            c2.dual_value,
-            c3.dual_value,
-            {
-                mode: {t: c.dual_value for t, c in cons.items()}
-                for mode, cons in sums_alpha_per_mode_constraints.items()
-            },
-            c6.dual_value,
-            {
-                mode: {t: c.dual_value for t, c in cons.items()}
-                for mode, cons in c_m_t_constraints.items()
-            },
-        ],
-    )

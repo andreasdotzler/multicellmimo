@@ -23,7 +23,7 @@ from mcm.mimo import (
     water_filling,
 )
 
-from mcm.utils import inv_sqrtm, logdet
+from mcm.mimo_utils import inv_sqrtm, logdet
 
 
 LOGGER = logging.getLogger(__name__)

@@ -8,7 +8,7 @@ import numpy as np
 
 from .mimo import MAC_cvx, ptp_capacity, water_filling
 from .mcm_typing import Matrix
-from .utils import sqrtm, logdet
+from .mimo_utils import sqrtm, logdet
 
 LOGGER = logging.getLogger(__name__)
 
