@@ -15,6 +15,8 @@ from mcm.network_optimization import (
     dual_problem_app_f
 )
 
+from mcm.timesharing import timesharing_fixed_fractions_dual, timesharing_fixed_fractions, timesharing_fixed_fractions_2
+
 
 from mcm.no_utils import InfeasibleOptimization
 from .utils import gen_test_network
@@ -96,12 +98,52 @@ def test_timesharing_fair(A):
     assert value == pytest.approx(opt_value, rel=1e-3, abs=1e-1)
     assert rates == pytest.approx(opt_q, rel=1e-3, abs=1e-1)
 
+def test_timesharing_fixed_fractions():
+    As, network = gen_test_network()
+    As, network = gen_test_network(20, np.random.random)
+    q_min = np.array([0.05] * 30)
+    q_max = np.array([20.0] * 30)
+    network.initialize_approximation(As)   
+    (
+        value,
+        rates,
+        fractions,
+        [d_rates, w_min, w_max, d_f_network, d_sum_f, d_c_m_t],
+    ) = timesharing_network(proportional_fair, network, q_min, q_max)
+    fractions = {mode: next(iter(f.values()))[0] for mode, f in fractions.items()}
+    fractions = {m: 1/6 for m in fractions}
+    fractions['reuse1'] = 1/2
+    for t_id, t in network.transmitters.items():
+        value_1, rates_1, schedules_1, c_m_1, [d_sum_f_1, d_c_m_1] = timesharing_fixed_fractions(
+            proportional_fair, fractions, t.users_per_mode, t.As_per_mode, q_min[t.users], q_max[t.users]
+        )
+        value_2, rates_2, schedules_2, c_m_2, [d_sum_f_2, d_c_m_2, la_2] = timesharing_fixed_fractions_2(
+            proportional_fair, fractions, t.users_per_mode, t.As_per_mode, q_min[t.users], q_max[t.users]
+        )
+        la = {m: la_2 @ c for m,c in c_m_2.items()}
+        value_d, rates_d, schedules_d, c_m_d, f_d, [d_sum_f_d, d_c_m_d, la_d] = timesharing_fixed_fractions_dual(
+            proportional_fair, la, t.users_per_mode, t.As_per_mode, q_min[t.users], q_max[t.users]
+        )
+        for m,f in f_d.items():
+            assert fractions[m] == pytest.approx(f, 1e-2)
+        # why is this? CHeck KKT (d_c_m_1['reuse1']*1/fractions['reuse1'] + d_c_m_1['reuse3-0']*1/fractions['reuse3-0'])/2
+        assert value_1 == pytest.approx(value_2, 1e-2)
+        # concave functions!
+        sum(fractions[m]*l for m,l in la.items() ) == pytest.approx(value_2 - value_d)
+        for user, rate_1 in rates_1.items():
+            assert rate_1 == pytest.approx(rates_2[user], 1e-2)
+        for mode, schedule_1 in schedules_1.items():
+            assert schedule_1 == pytest.approx(schedules_2[mode], 1e-2)
+        
+
+
+
 def test_fixed_f():
     As, network = gen_test_network(20, np.random.random)
     As, network = gen_test_network()
     q_min = np.array([0.05] * 30)
     q_max = np.array([20.0] * 30)
-    network.initialize_approximation(As)    
+    network.initialize_approximation(As)   
     (
         value,
         rates,
@@ -168,7 +210,7 @@ def test_fixed_f():
             F_t,
             r_t,
             alpha_t,
-            [lambdas, w_min, w_max, d_f_t_m, d_c_m],
+            [d_f_t_m, d_c_m],
         ) = t.scheduling(fractions, proportional_fair, q_min[t.users], q_max[t.users])
         v_a, q, c = dual_problem_app_f(proportional_fair, d_c_m, fractions, q_max[t.users], q_min[t.users])
 

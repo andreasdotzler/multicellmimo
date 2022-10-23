@@ -4,7 +4,7 @@ import numpy as np
 import logging
 
 
-from mcm.timesharing import timesharing_fixed_fractions, time_sharing, timesharing_network, time_sharing_cvx, time_sharing_no_duals
+from mcm.timesharing import timesharing_fixed_fractions_2, time_sharing, timesharing_network, time_sharing_cvx, time_sharing_no_duals
 
 LOGGER = logging.getLogger(__name__)
 from typing import Callable
@@ -41,11 +41,9 @@ class Transmitter:
         self.iteration = 0
         self.best_dual_value = np.Inf
 
-    def wsr(self, weights, mode):
-        if weights is None:
+    def wsr(self, t_weights, mode):
+        if t_weights is None:
             t_weights = self.weights
-        else:
-            t_weights = weights[self.users_per_mode[mode]]
         val, rates = self.wsr_per_mode[mode](t_weights)
         if mode not in self.As_per_mode:
             self.As_per_mode[mode] = rates.reshape((len(rates), 1))
@@ -68,8 +66,8 @@ class Transmitter:
             self.util, self.weights, self.q_max, self.q_min
         )
         l = self.iteration
-        # self.weights -= 1/(l+1)*(c_t_l_1 - q_t_l_1)
-        self.weights -= c_t_l_1 - q_t_l_1
+        self.weights -= 1/(l+1)*(c_t_l_1 - q_t_l_1)
+        #self.weights -= c_t_l_1 - q_t_l_1
         if l == 0:
             self.average_transmit_rate = c_t_l_1
         else:
@@ -87,9 +85,10 @@ class Transmitter:
         return primal_value, v_app + v_phy
 
     def scheduling(self, fractions, util, q_min, q_max):
-        return timesharing_fixed_fractions(
+        return timesharing_fixed_fractions_2(
             util, fractions, self.users_per_mode, self.As_per_mode, q_min, q_max
         )
+
 
 
 class Network:
@@ -133,7 +132,11 @@ class Network:
         A_max = {}
         for transmitter_id, transmitter in self.transmitters.items():
             for mode in transmitter.modes:
-                val, rates = transmitter.wsr(weights, mode)
+                if weights is not None:
+                    t_weights = weights[transmitter.users_per_mode[mode]]
+                else:
+                    t_weights = None
+                val, rates = transmitter.wsr(t_weights, mode)
                 if mode not in values:
                     values[mode] = {}
                 values[mode][transmitter_id] = val
@@ -153,7 +156,8 @@ class Network:
                 F_t,
                 r_t,
                 alpha_t,
-                [lambdas, w_min, w_max, d_f_t_m, d_c_m],
+                c_m,
+                [d_f_t_m, d_c_m, la],
             ) = t.scheduling(fractions, util, q_min[t.users], q_max[t.users])
             for mode, a in alpha_t.items():
                 if mode not in alphas:
@@ -162,7 +166,7 @@ class Network:
             # for mode, d in d_f_t_m.items():
             #    if mode not in d_f:
             #        d_f[mode] = {}
-            d_f[transmitter_id] = d_f_t_m
+            d_f[transmitter_id] = {m: la @ c for m,c in c_m.items()}
             F += F_t
             F_t_s[transmitter_id] = F_t
             for user, rate in r_t.items():
@@ -252,7 +256,7 @@ def dual_problem_app_f(util, weights_per_mode, f, q_max=None, q_min=None):
     q = cp.Variable(len(q_max))
     c_s = {m: cp.Variable(len(w)) for m,w in weights_per_mode.items()}
 
-    cost_dual = util(q) 
+    cost_dual = util(q)
     for m, weights in weights_per_mode.items():
         cost_dual -= weights @ c_s[m]    
     const_q = 0

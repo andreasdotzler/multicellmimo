@@ -243,7 +243,7 @@ def optimize_dual_cuttingplane(A, q_min, q_max, target=None):
 
 
 def optimize_dual_multicut(A, q_min, q_max, target=None):
-    update = poly_multicut_peruser
+    update = poly_multicut
     wsr_phy = I_C(A)
     util = proportional_fair
     return dual_ployhedaral_approx(util, q_min, q_max, wsr_phy, update)

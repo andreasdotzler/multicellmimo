@@ -4,7 +4,7 @@ import logging
 import numpy as np
 import pytest
 
-from mcm.no_utils import gen_test_network
+from tests.utils import gen_test_network
 
 from mcm.protocols.protocol1 import protocol1
 from mcm.protocols.protocol2 import protocol2
@@ -42,7 +42,7 @@ LOGGER = logging.getLogger(__name__)
     "As, network", [gen_test_network(), gen_test_network(20, np.random.random)]
 )
 def test_global_network(As, network, algorithm, seed):
-    q_min = np.array([0.1] * 30)
+    q_min = np.array([0.01] * 30)
     # q_min[0] = 0.5
     q_max = np.array([10.0] * 30)
     # q_max[29] = 0.15
