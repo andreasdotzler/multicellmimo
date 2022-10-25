@@ -2,6 +2,7 @@ import numpy as np
 from mcm.network_optimization import I_C
 from mcm.network import Network
 from mcm.transmitter import Transmitter
+from mcm.regions import R_m_t
 
 
 def gen_test_network(n_rate_points_per_mode_and_transmitter=1, sample_function=np.ones):
@@ -14,6 +15,11 @@ def gen_test_network(n_rate_points_per_mode_and_transmitter=1, sample_function=n
         "reuse3-0": {0: list(range(0, 10))},
         "reuse3-1": {1: list(range(10, 20))},
         "reuse3-2": {2: list(range(20, 30))},
+    }
+    users_per_transmitter = {
+        0: list(range(0, 10)),
+        1: list(range(10, 20)),
+        2: list(range(20, 30)),
     }
 
     As = {}
@@ -35,8 +41,14 @@ def gen_test_network(n_rate_points_per_mode_and_transmitter=1, sample_function=n
                 users_transmitter_mode[t] = {}
             wsr_transmitter_mode[t][mode] = I_C(Am[t])
             users_transmitter_mode[t][mode] = users
+    
+    
     for t in wsr_transmitter_mode:
-        transmitters[t] = Transmitter(
-            users_transmitter_mode[t], wsr_transmitter_mode[t], t
-        )
+        R_m_t_s = {}
+        users = users_transmitter_mode[t]
+        wsrs = wsr_transmitter_mode[t]
+        for m in wsr_transmitter_mode[t]:
+            R_m_t_s = {m: R_m_t(users[m], wsrs[m]) for m in wsrs}
+
+        transmitters[t] = Transmitter(R_m_t_s, t)
     return As, Network(transmitters)

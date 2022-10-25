@@ -1,59 +1,24 @@
+import fractions
 import numpy as np
 import cvxpy as cp
 import logging
 from numpy.lib.arraysetops import unique
 
 from mcm.no_utils import InfeasibleOptimization
-from mcm.regions import Q_vector
+from mcm.regions import Q_vector, R_m_t_approx
 
 LOGGER = logging.getLogger(__name__)
 
-
-def time_sharing_cvx(cost_function, A, q_min=None, q_max=None):
-    n_users, n = A.shape
-    r = cp.Variable(n_users, pos=True)
-    cost = cost_function(r)
-
-    if q_min is None:
-        q_min = np.zeros(r.size)
-    if q_max is None:
-        q_max = np.squeeze(np.asarray(np.amax(A, 1)))
-
-    alpha = cp.Variable(n, nonneg=True)
-    c1 = r == A @ alpha
-    c2 = r >= q_min
-    c3 = r <= q_max
-    c5 = cp.sum(alpha) == 1
-    constraints = [c1, c2, c3, c5]
-
-    prob = cp.Problem(cp.Maximize(cost), constraints)
+def solve_problem(util, cons):
+    prob = cp.Problem(util, cons)
     prob.solve()
-
-    # check KKT
     if "infeasible" in prob.status:
         raise InfeasibleOptimization()
-    assert prob.status == "optimal"
-    return (
-        prob.value,
-        r.value,
-        alpha.value,
-        [c1.dual_value, c2.dual_value, c3.dual_value, c5.dual_value],
-    )
+    assert "optimal" in prob.status, f"unable to solve problem: {prob.status}"
+    return prob
 
 
-def time_sharing(cost_function, A, q_min=None, q_max=None):
-    value, rates, alpha, [lambda_opt, _, _, _] = time_sharing_cvx(
-        cost_function, A, q_min, q_max
-    )
-    return value, rates, alpha, lambda_opt
-
-
-def time_sharing_no_duals(costs_function, A, q_min=None, q_max=None):
-    value, rates, _, _ = time_sharing_cvx(costs_function, A, q_min, q_max)
-    return value, rates
-
-
-def timesharing_fixed_fractions(cost_function, f, users, R_m, Q: Q_vector):
+def check_feasible(f, R_m, Q):
     if all(f[m] < 1e-3 for m in R_m):
         LOGGER.warning("no resources allocated")
         if any(Q.q_min >= 0):
@@ -61,110 +26,58 @@ def timesharing_fixed_fractions(cost_function, f, users, R_m, Q: Q_vector):
         else:
             raise NotImplementedError("no resources allocated - needs manual handling")
 
-    alphas = {}
-    c_m_constraints = {}
-    for mode, rates in R_m.items():
-        alphas[mode] = cp.Variable(rates.shape[1], nonneg=True)
 
+def time_sharing_cvx(cost_function, R: R_m_t_approx, Q: Q_vector):
+
+    r = cp.Variable(len(Q), pos=True)
+    cons = R.cons_in_approx(r) + Q.constraints(r)
+    prob = solve_problem(cp.Maximize(cost_function(r)), cons)
+ 
+    return (prob.value, r.value)
+
+
+def F_t_R_approx(cost_function, f, users, R_m, Q: Q_vector):
+    check_feasible(f, R_m, Q)
+   
     c_m = {}
-    for mode, As_m in R_m.items():
-        c_m[mode] = cp.Variable(len(users), nonneg=True)
-        c_m_constraints[mode] = c_m[mode] == As_m @ alphas[mode]
+    cons = []
+    for mode, R in R_m.items():
+        cons += R.cons_in_approx()
+        c_m[mode] = R.c
 
-    # f = {m:0 if f<10**-3 else f for m,f in f.items()}
-    q = cp.Variable(len(users))
     q_sum = cp.sum([f[mode] * c for mode, c in c_m.items() if f[mode] >= 1e-3], axis=1)
-    # q_constraint = q == q_sum
-    cost = cost_function(q_sum)
+    cons += Q.constraints(q_sum)   
+    prob = solve_problem(cp.Maximize(cost_function(q_sum)), cons)
 
-    c2 = Q.con_min(q_sum)
-    c3 = Q.con_max(q_sum)
-    c5 = {}
-    for mode in alphas:
-        c5[mode] = cp.sum(alphas[mode]) == 1
-
-    c_m_constraints_list = []
-    for mode, cons in c_m_constraints.items():
-        c_m_constraints_list.append(cons)
-    constraints = (
-        [c2, c3] + list(c5.values()) + c_m_constraints_list  # + [q_constraint]
-    )
-    prob = cp.Problem(cp.Maximize(cost), constraints)
-    prob.solve()
-    if "optimal" not in prob.status:
-        raise InfeasibleOptimization()
-    q = sum([f[m] * c.value for m, c, in c_m.items()])
     return (
         prob.value,
-        {user: r for user, r in zip(users, q)},
-        {mode: alpha.value for mode, alpha in alphas.items()},
-        {mode: c.value for mode, c in c_m.items()},
-        [
-            {mode: c.dual_value for mode, c in c5.items()},
-            {mode: c.dual_value for mode, c in c_m_constraints.items()},
-        ],
+        {user: r for user, r in zip(users, q_sum.value)}
     )
 
 
-def timesharing_fixed_fractions_dual(
-    cost_function, la, users_per_mode, As, q_min=None, q_max=None
-):
+def F_t_R_approx_conj(cost_function, la, users, R_m: dict[str, R_m_t_approx], Q: Q_vector):
 
-    users = []
-    alphas = {}
-    f = {}
-    c_m_constraints = {}
-    for mode, rates in As.items():
-        alphas[mode] = cp.Variable(rates.shape[1], nonneg=True)
-        f[mode] = cp.Variable(1, nonneg=True)
-        users += users_per_mode[mode]
-
-    users = unique(users)
-
+    f = {m: cp.Variable(1, nonneg=True) for m in la}
     c_m = {}
-    for mode, As_m in As.items():
-        users = users_per_mode[mode]
-        c_m[mode] = cp.Variable(len(users), nonneg=True)
-        c_m_constraints[mode] = c_m[mode] == As_m @ alphas[mode]
+    cons = []
+    for mode, R in R_m.items():
+        cons += R.cons_in_approx(sum_alphas=f[mode])
+        c_m[mode] = R.c
 
-    # f = {m:0 if f<10**-3 else f for m,f in f.items()}
+    q_sum = cp.sum([c for mode, c in c_m.items()], axis=1)
+    
     q = cp.Variable(len(users))
-    q_constraint = q == cp.sum([c for mode, c in c_m.items()], axis=1)
+    cons.append(q == q_sum)
     cost = cost_function(q) - cp.sum([la[mode] * f[mode] for mode in f])
-    # cost = cp.sum(cp.log())
+  
+    cons += Q.constraints(q_sum)   
+    prob = solve_problem(cp.Maximize(cost), cons)
 
-    # c2 = cp.sum([f[mode]*c for c in c_m.values()],axis=0 ) >= q_min
-    # c3 = cp.sum([f[mode]*c for c in c_m.values()],axis=0 ) <= q_max
-    c5 = {}
-    for mode in alphas:
-        c5[mode] = cp.sum(alphas[mode]) == f[mode]
-
-    c_m_constraints_list = []
-    for mode, cons in c_m_constraints.items():
-        c_m_constraints_list.append(cons)
-    constraints = (
-        # [c2, c3] + list(c5.values()) + c_m_constraints_list
-        list(c5.values())
-        + c_m_constraints_list
-        + [q_constraint]
-    )
-    prob = cp.Problem(cp.Maximize(cost), constraints)
-    prob.solve()
-    if "optimal" not in prob.status:
-        raise InfeasibleOptimization()
     return (
         prob.value,
-        {user: r for user, r in zip(users, q.value)},
-        {mode: alpha.value for mode, alpha in alphas.items()},
-        {mode: c.value for mode, c in c_m.items()},
-        {mode: f_m.value for mode, f_m in f.items()},
-        [
-            {mode: c.dual_value for mode, c in c5.items()},
-            {mode: c.dual_value for mode, c in c_m_constraints.items()},
-            q_constraint.dual_value,
-        ],
+        {user: r for user, r in zip(users, q_sum.value)},
+        {m: f_m.value for m,f_m in f.items()}
     )
-
 
 def timesharing_network(cost_function, network, Q: Q_vector):
 
@@ -281,12 +194,8 @@ def timesharing_network_dual(cost_function, la_m_t_s, network, q_min=None, q_max
     c3 = r <= q_max
 
     constraints = user_rate_constraints + [c2, c3]
-    prob = cp.Problem(cp.Maximize(cost), constraints)
-    prob.solve()
 
-    if "infeasible" in prob.status:
-        raise InfeasibleOptimization()
-    assert "optimal" in prob.status
+    prob = solve_problem(cp.Maximize(cost), constraints)
 
     return (
         prob.value,
@@ -298,3 +207,5 @@ def timesharing_network_dual(cost_function, la_m_t_s, network, q_min=None, q_max
             c3.dual_value,
         ],
     )
+
+

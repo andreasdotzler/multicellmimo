@@ -53,7 +53,7 @@ def protocol6(util, Q: Q_vector, network: Network):
                     if gap < 0.01:
                         break
                 d_f[t_id] = {m: la @ c for m, c in c_m.items()}
-                d_f[t_id] = {m: max(la @ t.As_per_mode[m]) for m in t.modes}
+                # d_f[t_id] = {m: max(la @ t.As_per_mode[m]) for m in t.modes}
                 F += F_t
                 F_t_s_i[t_id] = F_t
                 for user, rate in r_t.items():

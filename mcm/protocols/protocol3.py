@@ -19,14 +19,14 @@ def protocol3(util, Q: Q_vector, network: Network):
 
         # evalute approximation
         # project gradient
-        constraints = []
+
         d_f = {m: 0 for m in network.modes}
         for t, d_f_m in d_f_t_m.items():
             for m, d_f_i in d_f_m.items():
                 d_f[m] += d_f_i
         sum_d_f = sum(d_f.values())
         d_f = {m: v / sum_d_f for m, v in d_f.items()}
-        f_t_new = cp.Variable(len(network.modes), nonneg=True)
+
         f_t_new = {m: cp.Variable(1, nonneg=True) for m in network.modes}
 
         for n in range(100):
@@ -42,7 +42,7 @@ def protocol3(util, Q: Q_vector, network: Network):
                 break
             except InfeasibleOptimization:
                 LOGGER.info(f"Infeasible for {f_temp}")
-                pass
+                
         f_t = {m: f.value for m, f in f_t_new.items()}
 
         improvement = v_n - max_util

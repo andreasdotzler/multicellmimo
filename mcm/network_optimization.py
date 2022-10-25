@@ -5,14 +5,9 @@ from typing import Optional
 import cvxpy as cp
 import numpy as np
 
-from mcm.timesharing import (time_sharing_cvx, time_sharing_no_duals)
-from mcm.regions import Q_vector
+from mcm.timesharing import time_sharing_cvx
+from mcm.regions import Q_vector, R_m_t_approx
 LOGGER = logging.getLogger(__name__)
-
-# These tow functions are my very strange way to build a wsr from the time_sharing use an object
-def I_C_s(A):
-    return lambda weights: time_sharing_no_duals(weighted_sum_rate(weights), A)
-
 
 def wsr_for_A(weights, A):
     max_i = np.argmax(weights @ A)
@@ -25,12 +20,26 @@ def I_C(A):
 
 
 def I_C_Q(A, q_min, q_max):
-    return lambda weights: time_sharing_no_duals(
-        weighted_sum_rate(weights), A, q_min, q_max
-    )
+    Q = Q_vector(q_min=q_min, q_max=q_max)
+    R = R_m_t_approx(A=A)
+    return lambda weights: time_sharing_cvx(weighted_sum_rate(weights), R, Q)
 
 
+def weighted_sum_rate(weights):
+    def weighted_sum_rate(r):
+        return weights @ r
+    return weighted_sum_rate
 
+
+def proportional_fair(r):
+    # return cp.atoms.affine.sum.Sum(cp.atoms.elementwise.log.log(r))
+    return cp.sum(cp.log(r))
+
+
+def app_layer(weights):
+    def app_layer(r):
+        return cp.atoms.affine.sum.Sum(cp.atoms.elementwise.log.log(r)) - weights @ r
+    return app_layer
 
 
 def U_Q(util, q, Q):
@@ -118,19 +127,6 @@ def V_conj(network, util, la_m_t, Q):
     return v_opt, q
 
 
-def weighted_sum_rate(weights):
-    return lambda r: weights @ r
-
-
-def proportional_fair(r):
-    # return cp.atoms.affine.sum.Sum(cp.atoms.elementwise.log.log(r))
-    return cp.sum(cp.log(r))
-
-
-def app_layer(weights):
-    return (
-        lambda r: cp.atoms.affine.sum.Sum(cp.atoms.elementwise.log.log(r)) - weights @ r
-    )
 
 
 def optimize_app_phy(util, Q: Q_vector, wsr_phy):
@@ -143,10 +139,12 @@ def optimize_app_phy(util, Q: Q_vector, wsr_phy):
     best_dual_value = np.inf
     for n in range(1, 1000):
         # create and solve the approximated problem
-        approx_value, q, alpha, [la, w_min, w_max, mu] = time_sharing_cvx(
-            util, A, Q.q_min, Q.q_max
-        )
-
+        n_users, n = A.shape
+        R = R_m_t_approx(list(range(0, n_users)), A)
+        approx_value, q = time_sharing_cvx(util, R, Q)
+        alpha = R.alphas
+        (la, mu) = R.dual_values()
+        (w_min, w_max) = Q.dual_values()
         # solve the dual problem to provide bound and update
         v_app, _ = U_Q_conj(util, la, Q)
         v_phy, c = wsr_phy(la)

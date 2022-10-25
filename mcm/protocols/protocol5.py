@@ -16,6 +16,7 @@ def protocol5(util, Q: Q_vector, network: Network):
     network.create_init_mode(Q.q_min)
 
     for n in range(1, 1000):
+
         approx_value, _, alphas, [weights, _, _, _, _, la_m_t] = timesharing_network(util, network, Q)
         # TODO dual_app
         q_app = np.minimum(Q.q_max, np.maximum(Q.q_min, 1 / weights))

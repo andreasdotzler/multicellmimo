@@ -12,8 +12,7 @@ def protocol1(util, Q: Q_vector, network: Network):
     best_dual_value = np.Inf
     for transmitter in network.transmitters.values():
         transmitter.util = util
-        transmitter.q_min = Q.q_min[transmitter.users]
-        transmitter.q_max = Q.q_max[transmitter.users]
+        transmitter.Q = Q[transmitter.users]
     for n in range(1, 1000):
         # wsr_per_mode_and_transmitter
         w_m_t_s = {m: {} for m in network.modes}

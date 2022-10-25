@@ -22,11 +22,11 @@ class Network:
     def initialize_approximation(self, As: A_m_t) -> None:
         for mode, trans_and_At in As.items():
             for trans, At in trans_and_At.items():
-                self.transmitters[trans].As_per_mode[mode] = At
+                self.transmitters[trans].set_approximation(mode, At)
 
     def reset_approximation(self) -> None:
         for t in self.transmitters.values():
-            t.As_per_mode = {}
+            t.reset_approximations()
 
     def wsr_per_mode(self, weights: Weights) -> Tuple[int, np.ndarray]:
         max_value = -np.Inf
@@ -94,14 +94,9 @@ class Network:
             # unique_users = list(set(transmitter.users))
             for mode in transmitter.modes:
                 a = q_min[transmitter.users_per_mode[mode]]
-                transmitter.As_per_mode[mode] = a.reshape(len(a), 1)
+                At = a.reshape(len(a), 1)
+                transmitter.set_approximation(mode, At)
 
-    def get_As(self) -> A_m_t:
-        As: A_m_t = {m: {} for m in self.modes}
-        for t_id, t in self.transmitters.items():
-            for mode in t.modes:
-                As[mode][t_id] = t.As_per_mode[mode]
-        return As
 
     def resource_allocation(self, f_t, d_f_n_s, F_t_s) -> Tuple[int, float]:
         i = len(f_t) - 1
