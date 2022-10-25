@@ -7,7 +7,7 @@ import cvxpy as cp
 import numpy as np
 
 from .mimo import MAC_cvx, ptp_capacity, water_filling
-from .mcm_typing import Matrix
+from .typing import Matrix
 from .mimo_utils import sqrtm, logdet
 
 LOGGER = logging.getLogger(__name__)

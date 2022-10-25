@@ -1,33 +1,21 @@
-import numpy as np
-import pytest
 import random
 
-from mcm.network_optimization import (
-    I_C,
-    I_C_Q,
-    U_Q,
-    U_Q_conj,
-    optimize_app_phy,
-    proportional_fair,
-    time_sharing,
-    time_sharing_cvx,
-    weighted_sum_rate,
-    timesharing_network,
-    wsr_for_A,
-    dual_problem_app_f,
-    Q_vector,
-    V_conj,
-    V,
-)
-
-from mcm.timesharing import (
-    timesharing_network_dual,
-    timesharing_fixed_fractions_dual,
-    timesharing_fixed_fractions,
-)
-
-
+import numpy as np
+import pytest
+from mcm.network_optimization import (I_C, U_Q, U_Q_conj, V,
+                                      V_conj, dual_problem_app_f,
+                                      optimize_app_phy, proportional_fair,
+                                      weighted_sum_rate,
+                                      wsr_for_A)
 from mcm.no_utils import InfeasibleOptimization
+from mcm.timesharing import (timesharing_fixed_fractions,
+                             time_sharing,
+                             time_sharing_cvx,
+                             timesharing_fixed_fractions_dual,
+                             timesharing_network,
+                             timesharing_network_dual)
+from mcm.regions import Q_vector
+
 from .utils import gen_test_network
 
 
@@ -86,6 +74,8 @@ def test_timesharing_fair(A):
     # todo this currently breaks the test
     q_max[0] = 0.2
 
+    Q = Q_vector(q_min=q_min, q_max=q_max)
+
     value, rates, alpha, [lambda_opt, w_min, w_max, mu] = time_sharing_cvx(
         proportional_fair, A, q_min, q_max
     )
@@ -114,7 +104,7 @@ def test_timesharing_fair(A):
 
     # now by iterative optimization
     wsr = I_C(A)
-    opt_value, opt_q, _, _ = optimize_app_phy(proportional_fair, q_min, q_max, wsr)
+    opt_value, opt_q, _, _ = optimize_app_phy(proportional_fair, Q, wsr)
     assert value == pytest.approx(opt_value, rel=1e-3, abs=1e-1)
     assert rates == pytest.approx(opt_q, rel=1e-3, abs=1e-1)
 
@@ -124,13 +114,14 @@ def test_timesharing_fixed_fractions():
     As, network = gen_test_network(20, np.random.random)
     q_min = np.array([0.05] * 30)
     q_max = np.array([20.0] * 30)
+    Q = Q_vector(q_min=q_min, q_max=q_max)
     network.initialize_approximation(As)
     (
         value,
         rates,
         fractions,
         [d_rates, w_min, w_max, d_f_network, d_sum_f, d_c_m_t],
-    ) = timesharing_network(proportional_fair, network, q_min, q_max)
+    ) = timesharing_network(proportional_fair, network, Q)
 
     fractions = {m: 1 / 6 for m in fractions}
     fractions["reuse1"] = 1 / 2
@@ -147,8 +138,7 @@ def test_timesharing_fixed_fractions():
             fractions,
             t.users,
             t.As_per_mode,
-            q_min[t.users],
-            q_max[t.users],
+            Q[t.users]
         )
 
         q_2 = np.zeros(len(t.users))
@@ -189,13 +179,14 @@ def test_fixed_f():
     # As, network = gen_test_network()
     q_min = np.array([0.05] * 30)
     q_max = np.array([20.0] * 30)
+    Q = Q_vector(q_min=q_min, q_max=q_max)
     network.initialize_approximation(As)
     (
         value,
         rates,
         alphas_network,
         [d_rates, w_min, w_max, d_f_network, d_sum_f, d_c_m_t],
-    ) = timesharing_network(proportional_fair, network, q_min, q_max)
+    ) = timesharing_network(proportional_fair, network, Q)
     # verfiy the dual variables
     assert 1 / rates + w_min - w_max - d_rates == pytest.approx(
         np.zeros(len(rates)), rel=1e-2, abs=1e-1
@@ -277,7 +268,7 @@ def test_fixed_f():
             alpha_t,
             c_m,
             [d_f_t_m, d_c_m, la],
-        ) = t.scheduling(fractions, proportional_fair, q_min[t.users], q_max[t.users])
+        ) = t.scheduling(fractions, proportional_fair, Q[t.users])
         v_a, q, c = dual_problem_app_f(
             proportional_fair, d_c_m, fractions, q_max[t.users], q_min[t.users]
         )

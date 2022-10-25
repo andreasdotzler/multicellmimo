@@ -1,0 +1,2 @@
+class InfeasibleOptimization(Exception):
+    pass

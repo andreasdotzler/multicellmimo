@@ -7,10 +7,10 @@ from mcm.network_optimization import (
     I_C,
     I_C_Q,
     U_Q_conj,
-    Q_vector,
     optimize_app_phy,
     proportional_fair,
 )
+from mcm.regions import Q_vector
 
 LOGGER = logging.getLogger(__name__)
 
