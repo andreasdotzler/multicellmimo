@@ -5,11 +5,16 @@ import numpy as np
 import logging
 
 
-from mcm.timesharing import timesharing_fixed_fractions, time_sharing, timesharing_network, time_sharing_cvx, time_sharing_no_duals
+from mcm.timesharing import (
+    timesharing_fixed_fractions,
+    time_sharing,
+    timesharing_network,
+    time_sharing_cvx,
+    time_sharing_no_duals,
+)
 
 LOGGER = logging.getLogger(__name__)
 from typing import Callable
-
 
 
 class Transmitter:
@@ -72,8 +77,8 @@ class Transmitter:
             self.util, self.weights, Q_vector(self.q_min, self.q_max)
         )
         l = self.iteration
-        self.weights -= 1/(l+1)*(c_t_l_1 - q_t_l_1)
-        #self.weights -= c_t_l_1 - q_t_l_1
+        self.weights -= 1 / (l + 1) * (c_t_l_1 - q_t_l_1)
+        # self.weights -= c_t_l_1 - q_t_l_1
         if l == 0:
             self.average_transmit_rate = c_t_l_1
         else:
@@ -102,7 +107,6 @@ class Transmitter:
         la = 1 / sum([fractions[m] * c for m, c, in c_m.items()])
         self.weights_per_mode = d_c_m
         return F_t, r_t, alpha_t, c_m, [d_f_t_m, d_c_m, la]
-
 
 
 class Network:
@@ -180,7 +184,7 @@ class Network:
             # for mode, d in d_f_t_m.items():
             #    if mode not in d_f:
             #        d_f[mode] = {}
-            d_f[transmitter_id] = {m: la @ c for m,c in c_m.items()}
+            d_f[transmitter_id] = {m: la @ c for m, c in c_m.items()}
             F += F_t
             F_t_s[transmitter_id] = F_t
             for user, rate in r_t.items():
@@ -190,11 +194,10 @@ class Network:
     def create_init_mode(self, q_min):
         # we need to initialize a fake mode that is all q_min
         for transmitter in self.transmitters.values():
-            #unique_users = list(set(transmitter.users))
+            # unique_users = list(set(transmitter.users))
             for mode in transmitter.modes:
                 a = q_min[transmitter.users_per_mode[mode]]
                 transmitter.As_per_mode[mode] = a.reshape(len(a), 1)
-
 
     def get_As(self):
         As = {m: {} for m in self.modes}
@@ -212,21 +215,22 @@ class Network:
             mu[t] = cp.Variable(1)
             for j in range(i + 1):
                 t_cons.append(
-                        mu[t]
-                        <= F_t_s[j][t]
-                        + cp.sum(
-                            [
-                                d_f_n_s[j][t][m] * (f[m] - f_t[j][m])
-                                for m in d_f_n_s[j][t].keys()
-                            ]
-                        )
+                    mu[t]
+                    <= F_t_s[j][t]
+                    + cp.sum(
+                        [
+                            d_f_n_s[j][t][m] * (f[m] - f_t[j][m])
+                            for m in d_f_n_s[j][t].keys()
+                        ]
                     )
+                )
         sum_con = [cp.sum(list(f.values())) == 1]
         prob = cp.Problem(cp.Maximize(cp.sum(list(mu.values()))), sum_con + t_cons)
         prob.solve()
         assert prob.status == "optimal"
         f_new = {m: ff.value[0] for m, ff in f.items()}
         return prob.value, f_new
+
 
 # These tow functions are my very strange way to build a wsr from the time_sharing use an object
 def I_C_s(A):
@@ -249,14 +253,14 @@ def I_C_Q(A, q_min, q_max):
     )
 
 
-
-
-class Q_vector():
+class Q_vector:
     def __init__(self, q_min=None, q_max=None):
         self.q_max = q_max
         self.q_min = q_min
         if q_max is not None and q_min is not None:
-            assert all(q_max >= q_min), f"Error need q_max >= q_min - q_max : {q_max} q_min: {q_min} "
+            assert all(
+                q_max >= q_min
+            ), f"Error need q_max >= q_min - q_max : {q_max} q_min: {q_min} "
 
     def __len__(self):
         if self.q_min is not None:
@@ -267,11 +271,13 @@ class Q_vector():
             return 0
 
     def __contains__(self, q):
-        return not (self.q_max is not None and any(q > self.q_max)) or (self.q_min is not None and any(q < self.q_min))
-    
+        return not (self.q_max is not None and any(q > self.q_max)) or (
+            self.q_min is not None and any(q < self.q_min)
+        )
+
     def __getitem__(self, users):
         return Q_vector(q_min=self.q_min[users], q_max=self.q_max[users])
-        
+
     def constraints(self, q):
         cons = []
         if self.q_max is not None:
@@ -304,9 +310,10 @@ def U_Q_conj(util, weights, Q):
     #    v_app = sum(np.log(q_app)) - weights @ q_app
     #    assert abs(v_app_1 - v_app) <= 10**-6
 
+
 def dual_problem_app_f(util, weights_per_mode, f, q_max=None, q_min=None):
     q = cp.Variable(len(q_max))
-    c_s = {m: cp.Variable(len(w), nonneg=True) for m,w in weights_per_mode.items()}
+    c_s = {m: cp.Variable(len(w), nonneg=True) for m, w in weights_per_mode.items()}
 
     cost_dual = util(q)
     for m, weights in weights_per_mode.items():
@@ -324,7 +331,7 @@ def dual_problem_app_f(util, weights_per_mode, f, q_max=None, q_min=None):
     prob_dual.solve()
     if "optimal" not in prob_dual.status:
         a = 1
-    return prob_dual.value, q.value, {m: c.value for m,c in c_s.items()}
+    return prob_dual.value, q.value, {m: c.value for m, c in c_s.items()}
 
 
 def V(network, util, c_m_t, Q):
@@ -336,9 +343,7 @@ def V(network, util, c_m_t, Q):
             c_m[mode][network.transmitters[t].users] += c
     q_sum = cp.sum([f[mode] * c for mode, c in c_m.items()], axis=1)
 
-    constraints = (
-        [cp.sum(list(f.values())) == 1] + Q.constraints(q_sum)
-    )
+    constraints = [cp.sum(list(f.values())) == 1] + Q.constraints(q_sum)
     prob = cp.Problem(cp.Maximize(util(q_sum)), constraints)
     prob.solve()
     if "optimal" not in prob.status:
@@ -346,7 +351,7 @@ def V(network, util, c_m_t, Q):
     return (
         prob.value,
         sum([f[mode].value * c for mode, c in c_m.items()]),
-        {mode: f_m.value for mode, f_m in f.items()}
+        {mode: f_m.value for mode, f_m in f.items()},
     )
 
 
@@ -358,7 +363,7 @@ def V_conj(network, util, la_m_t, Q):
         w_t = {}
         q_m = {}
         # TODO if we prove weights are the same for every mode we can drop the loop
-        for m in t.modes:         
+        for m in t.modes:
             val, q_t = U_Q_conj(util, la_m_t[m][t_id], Q[t.users])
             w_t[m] = val
             q_m[m] = q_t
@@ -366,6 +371,7 @@ def V_conj(network, util, la_m_t, Q):
         q[t.users] = q_m[m_opt_t]
         v_opt += v_opt_t
     return v_opt, q
+
 
 def weighted_sum_rate(weights):
     return lambda r: weights @ r

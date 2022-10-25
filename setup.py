@@ -21,5 +21,5 @@ setup(
     url="https://github.com/andreasdotzler/TODO",
     license=license,
     packages=find_packages(exclude=("tests", "docs")),
-    install_require=['cvxpy', 'numpy']
+    install_require=["cvxpy", "numpy"],
 )

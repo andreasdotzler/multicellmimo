@@ -26,6 +26,7 @@ from mcm.network_optimization import (
 
 LOGGER = logging.getLogger(__name__)
 
+
 @pytest.mark.parametrize(
     "algorithm",
     [

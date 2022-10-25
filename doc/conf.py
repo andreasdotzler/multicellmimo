@@ -19,7 +19,7 @@ sys.path.insert(0, os.path.abspath("../"))
 # Additional stuff for the LaTeX preamble.
 
 #####################################################
-# add LaTeX macros 
+# add LaTeX macros
 
 
 try:
@@ -27,12 +27,12 @@ try:
 except NameError:
     imgmath_latex_preamble = ""
 
-with open('latex_macros.sty', 'r') as f:
+with open("latex_macros.sty", "r") as f:
     for macro in f.readlines():
         # used when building latex and pdf versions
-        #latex_elements['preamble'] += macro + '\n'
+        # latex_elements['preamble'] += macro + '\n'
         # used when building html version
-        imgmath_latex_preamble += macro + '\n'
+        imgmath_latex_preamble += macro + "\n"
 
 print(imgmath_latex_preamble)
 #####################################################

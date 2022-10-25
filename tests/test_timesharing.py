@@ -13,22 +13,28 @@ from mcm.network_optimization import (
     time_sharing_cvx,
     weighted_sum_rate,
     timesharing_network,
-    wsr_for_A, 
+    wsr_for_A,
     dual_problem_app_f,
     Q_vector,
-    V_conj, V,
+    V_conj,
+    V,
 )
 
-from mcm.timesharing import timesharing_network_dual, timesharing_fixed_fractions_dual, timesharing_fixed_fractions
+from mcm.timesharing import (
+    timesharing_network_dual,
+    timesharing_fixed_fractions_dual,
+    timesharing_fixed_fractions,
+)
 
 
 from mcm.no_utils import InfeasibleOptimization
 from .utils import gen_test_network
 
+
 @pytest.mark.parametrize("util", (proportional_fair, weighted_sum_rate(np.ones(10))))
 def test_U_Q_conj(util) -> None:
 
-    Q = Q_vector(q_min = np.zeros(10), q_max = np.ones(10))
+    Q = Q_vector(q_min=np.zeros(10), q_max=np.ones(10))
     la = np.random.random(10)
     val_conj, q = U_Q_conj(util, la, Q)
     val = U_Q(util, q, Q)
@@ -112,6 +118,7 @@ def test_timesharing_fair(A):
     assert value == pytest.approx(opt_value, rel=1e-3, abs=1e-1)
     assert rates == pytest.approx(opt_q, rel=1e-3, abs=1e-1)
 
+
 def test_timesharing_fixed_fractions():
     As, network = gen_test_network()
     As, network = gen_test_network(20, np.random.random)
@@ -125,14 +132,24 @@ def test_timesharing_fixed_fractions():
         [d_rates, w_min, w_max, d_f_network, d_sum_f, d_c_m_t],
     ) = timesharing_network(proportional_fair, network, q_min, q_max)
 
-    fractions = {m: 1/6 for m in fractions}
-    fractions['reuse1'] = 1/2
+    fractions = {m: 1 / 6 for m in fractions}
+    fractions["reuse1"] = 1 / 2
     for t_id, t in network.transmitters.items():
 
-        value_2, rates_2, schedules_2, c_m_2, [d_sum_f_2, d_c_m_2] = timesharing_fixed_fractions(
-            proportional_fair, fractions, t.users, t.As_per_mode, q_min[t.users], q_max[t.users]
+        (
+            value_2,
+            rates_2,
+            schedules_2,
+            c_m_2,
+            [d_sum_f_2, d_c_m_2],
+        ) = timesharing_fixed_fractions(
+            proportional_fair,
+            fractions,
+            t.users,
+            t.As_per_mode,
+            q_min[t.users],
+            q_max[t.users],
         )
- 
 
         q_2 = np.zeros(len(t.users))
         for m in t.modes:
@@ -144,26 +161,35 @@ def test_timesharing_fixed_fractions():
             assert fractions[m] / q_2 == pytest.approx(d_c_m_2[m], abs=1e-3)
         la_2 = 1 / q_2
 
-        la = {m: la_2 @ c for m,c in c_m_2.items()}
-        value_d, rates_d, schedules_d, c_m_d, f_d, [d_sum_f_d, d_c_m_d, la_d] = timesharing_fixed_fractions_dual(
-            proportional_fair, la, t.users_per_mode, t.As_per_mode, q_min[t.users], q_max[t.users]
+        la = {m: la_2 @ c for m, c in c_m_2.items()}
+        (
+            value_d,
+            rates_d,
+            schedules_d,
+            c_m_d,
+            f_d,
+            [d_sum_f_d, d_c_m_d, la_d],
+        ) = timesharing_fixed_fractions_dual(
+            proportional_fair,
+            la,
+            t.users_per_mode,
+            t.As_per_mode,
+            q_min[t.users],
+            q_max[t.users],
         )
-        for m,f in f_d.items():
+        for m, f in f_d.items():
             assert fractions[m] == pytest.approx(f, 1e-2)
 
         # concave functions!
-        sum(fractions[m]*l for m,l in la.items() ) == pytest.approx(value_2 - value_d)
-       
-        
-
+        sum(fractions[m] * l for m, l in la.items()) == pytest.approx(value_2 - value_d)
 
 
 def test_fixed_f():
     As, network = gen_test_network(20, np.random.random)
-    #As, network = gen_test_network()
+    # As, network = gen_test_network()
     q_min = np.array([0.05] * 30)
     q_max = np.array([20.0] * 30)
-    network.initialize_approximation(As) 
+    network.initialize_approximation(As)
     (
         value,
         rates,
@@ -174,13 +200,14 @@ def test_fixed_f():
     assert 1 / rates + w_min - w_max - d_rates == pytest.approx(
         np.zeros(len(rates)), rel=1e-2, abs=1e-1
     )
-    [dual_value, dual_rates, dual_c_m_t_s, _] = timesharing_network_dual(proportional_fair, d_c_m_t, network, q_min, q_max)
+    [dual_value, dual_rates, dual_c_m_t_s, _] = timesharing_network_dual(
+        proportional_fair, d_c_m_t, network, q_min, q_max
+    )
 
     mm = 0
     for m, c_t in dual_c_m_t_s.items():
         for t, c in c_t.items():
-            mm += d_c_m_t[m][t]@c
-    
+            mm += d_c_m_t[m][t] @ c
 
     la_m = {}
     c_m = {}
@@ -190,7 +217,9 @@ def test_fixed_f():
         la_m[mode] = 0
         c_m[mode] = np.zeros(len(rates))
         for t, A in Am.items():
-            c_m_t_s[mode][t] = c_m_t = 1 / sum(alphas_network[mode][t]) * A @ alphas_network[mode][t]
+            c_m_t_s[mode][t] = c_m_t = (
+                1 / sum(alphas_network[mode][t]) * A @ alphas_network[mode][t]
+            )
             f_cal[mode] = sum(alphas_network[mode][t])
             users = network.transmitters[t].users_per_mode[mode]
             # c_m_t rescaled to 100% resources
@@ -198,7 +227,7 @@ def test_fixed_f():
                 c_m[mode][users] += c_m_t
 
             la_m[mode] += 1 / sum(alphas_network[mode][t]) * d_c_m_t[mode][t] @ c_m_t
-   
+
     Q = Q_vector(q_min=q_min, q_max=q_max)
     val_conj, q_conj = V_conj(network, proportional_fair, d_c_m_t, Q)
     val, q, f = V(network, proportional_fair, c_m_t_s, Q)
@@ -208,7 +237,7 @@ def test_fixed_f():
             mm = d @ c_m_t_s[mode][t]
     assert val_conj == pytest.approx(dual_value, 1e-3)
     assert val - val_conj == pytest.approx(mm, 1e-3)
-    #for mode in la_m:
+    # for mode in la_m:
     #    assert la_m[mode] == pytest.approx(sum(d_f_network[mode].values()), 1e-3)
     #    assert la_m[mode] == pytest.approx(d_sum_f, 1e-3)
     # max_r U(r) : r in R <-> min_la max_r U(r) : la(r - sum_m f_m c_m)
@@ -219,26 +248,26 @@ def test_fixed_f():
     # xi = max_m df
     # d_f_m = la c_m is the same for all active modes!
 
-    #for mode, c in c_m.items():
+    # for mode, c in c_m.items():
     #    assert d_rates @ c == pytest.approx(30, 1e-3)
 
-    #me = sum(la_m.values()) / len(la_m.values())
-    #for la in la_m.values():
-        # does this imply we already know the optimal dual parameters? n_users? -> optimal solution in one mode?
-        #assert la == pytest.approx(me, 1e-3)
+    # me = sum(la_m.values()) / len(la_m.values())
+    # for la in la_m.values():
+    # does this imply we already know the optimal dual parameters? n_users? -> optimal solution in one mode?
+    # assert la == pytest.approx(me, 1e-3)
 
     fractions = {}
     for mode, alphas_per_transmitter in alphas_network.items():
         for alphas in alphas_per_transmitter.values():
             fractions[mode] = sum(alphas)
             break
-    
-    #v_n, r_n, alphas_n, d_f_n, F_t = network.scheduling(
+
+    # v_n, r_n, alphas_n, d_f_n, F_t = network.scheduling(
     #    fractions, proportional_fair, q_min, q_max
-    #)
-    #assert v_n == pytest.approx(value, 1e-3)
-    #assert r_n == pytest.approx(rates, 1e-1)
-    #for t, d_f_t_n in d_f_n.items():
+    # )
+    # assert v_n == pytest.approx(value, 1e-3)
+    # assert r_n == pytest.approx(rates, 1e-1)
+    # for t, d_f_t_n in d_f_n.items():
     #    for mode, d in d_f_t_n.items():
     #        assert d == pytest.approx(d_f_network[mode][t], 1e-2)
     for t in network.transmitters.values():
@@ -249,15 +278,15 @@ def test_fixed_f():
             c_m,
             [d_f_t_m, d_c_m, la],
         ) = t.scheduling(fractions, proportional_fair, q_min[t.users], q_max[t.users])
-        v_a, q, c = dual_problem_app_f(proportional_fair, d_c_m, fractions, q_max[t.users], q_min[t.users])
+        v_a, q, c = dual_problem_app_f(
+            proportional_fair, d_c_m, fractions, q_max[t.users], q_min[t.users]
+        )
 
         v_p = 0
         for mode, As in t.As_per_mode.items():
             w, r = wsr_for_A(d_c_m[mode], As)
             v_p += w
         assert F_t == pytest.approx(v_a + v_p, 1e-2)
-
-
 
 
 def dual_problem_phy(A, weights):

@@ -143,8 +143,8 @@ def test_MAC_Rates():
 
 
 def test_vishwanath_example1():
-    """ we reproduce the numerical example in "Duality, Achievable Rates, and Sum-Rate Capacity of
-    Gaussian MIMO Broadcast Channels" by Vishwanath, Jindal, Goldsmith 
+    """we reproduce the numerical example in "Duality, Achievable Rates, and Sum-Rate Capacity of
+    Gaussian MIMO Broadcast Channels" by Vishwanath, Jindal, Goldsmith
     http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.76.5703&rep=rep1&type=pdf
     """
     # example 1
@@ -182,8 +182,8 @@ def test_vishwanath_example1():
 
 
 def test_vishwanath_example2():
-    """ we redroduce the numerical example in "Duality, Achievable Rates, and Sum-Rate Capacity of
-    Gaussian MIMO Broadcast Channels" by Vishwanath, Jindal, Goldsmith 
+    """we redroduce the numerical example in "Duality, Achievable Rates, and Sum-Rate Capacity of
+    Gaussian MIMO Broadcast Channels" by Vishwanath, Jindal, Goldsmith
     http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.76.5703&rep=rep1&type=pdf
     """
     # example 2

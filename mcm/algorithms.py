@@ -41,9 +41,9 @@ def optimize_primal_sub(A, q_min, q_max, target=None):
 
         c_d_Q = []
         for r_i, q_min_i, q_max_i, d_Q_i in zip(rates, q_min, q_max, d_Q):
-            if abs(r_i - q_min_i) <= 10 ** -6:
+            if abs(r_i - q_min_i) <= 10**-6:
                 c_d_Q.append(d_Q_i >= 0)
-            elif abs(r_i - q_max_i) <= 10 ** -6:
+            elif abs(r_i - q_max_i) <= 10**-6:
                 c_d_Q.append(d_Q_i <= 0)
             else:
                 c_d_Q.append(d_Q_i == 0)
