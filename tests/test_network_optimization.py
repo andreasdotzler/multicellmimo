@@ -17,7 +17,6 @@ from mcm.network_optimization import (
     I_C,
     Network,
     Transmitter,
-    dual_problem_app,
     dual_problem_app_f,
     proportional_fair,
     timesharing_network,

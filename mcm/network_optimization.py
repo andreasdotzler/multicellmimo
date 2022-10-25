@@ -1,10 +1,11 @@
+from os import truncate
 import cvxpy as cp
 
 import numpy as np
 import logging
 
 
-from mcm.timesharing import timesharing_fixed_fractions_2, time_sharing, timesharing_network, time_sharing_cvx, time_sharing_no_duals
+from mcm.timesharing import timesharing_fixed_fractions, time_sharing, timesharing_network, time_sharing_cvx, time_sharing_no_duals
 
 LOGGER = logging.getLogger(__name__)
 from typing import Callable
@@ -37,9 +38,14 @@ class Transmitter:
         assert q_max is None or len(q_max) == len(self.users)
         self.q_max = q_max
         self.weights = np.ones(len(self.users))
+        self.weights_per_mode = {}
         self.average_transmit_rate = None
         self.iteration = 0
         self.best_dual_value = np.Inf
+        self.f_t = None
+        self.alphas = None
+        self.q = None
+        self.c_m_t_s = None
 
     def wsr(self, t_weights, mode):
         if t_weights is None:
@@ -62,8 +68,8 @@ class Transmitter:
         # = np.zeros(len(self.users))
         # c_t_l_1[self.users_per_mode[m_opt]] += c_opt
         v_phy = self.weights @ c_t_l_1
-        v_app, q_t_l_1 = dual_problem_app(
-            self.util, self.weights, self.q_max, self.q_min
+        v_app, q_t_l_1 = U_Q_conj(
+            self.util, self.weights, Q_vector(self.q_min, self.q_max)
         )
         l = self.iteration
         self.weights -= 1/(l+1)*(c_t_l_1 - q_t_l_1)
@@ -85,9 +91,17 @@ class Transmitter:
         return primal_value, v_app + v_phy
 
     def scheduling(self, fractions, util, q_min, q_max):
-        return timesharing_fixed_fractions_2(
-            util, fractions, self.users_per_mode, self.As_per_mode, q_min, q_max
+        self.f_t = fractions
+        (F_t, r_t, alpha_t, c_m, [d_f_t_m, d_c_m]) = timesharing_fixed_fractions(
+            util, fractions, self.users, self.As_per_mode, q_min, q_max
         )
+        # d_c_m = f_m / (sum_m f_m c_m) -> d_c_m = [0,..,0] if f_m == 0
+        for m in d_c_m:
+            if fractions[m] <= 1e-3:
+                d_c_m[m] = np.zeros_like(d_c_m[m])
+        la = 1 / sum([fractions[m] * c for m, c, in c_m.items()])
+        self.weights_per_mode = d_c_m
+        return F_t, r_t, alpha_t, c_m, [d_f_t_m, d_c_m, la]
 
 
 
@@ -235,16 +249,54 @@ def I_C_Q(A, q_min, q_max):
     )
 
 
-def dual_problem_app(util, weights, q_max=None, q_min=None):
-    q = cp.Variable(len(q_max))
+
+
+class Q_vector():
+    def __init__(self, q_min=None, q_max=None):
+        self.q_max = q_max
+        self.q_min = q_min
+        if q_max is not None and q_min is not None:
+            assert all(q_max >= q_min), f"Error need q_max >= q_min - q_max : {q_max} q_min: {q_min} "
+
+    def __len__(self):
+        if self.q_min is not None:
+            return len(self.q_min)
+        elif self.q_max is not None:
+            return len(self.q_max)
+        else:
+            return 0
+
+    def __contains__(self, q):
+        return not (self.q_max is not None and any(q > self.q_max)) or (self.q_min is not None and any(q < self.q_min))
+    
+    def __getitem__(self, users):
+        return Q_vector(q_min=self.q_min[users], q_max=self.q_max[users])
+        
+    def constraints(self, q):
+        cons = []
+        if self.q_max is not None:
+            cons.append(q <= self.q_max)
+        if self.q_min is not None:
+            cons.append(q >= self.q_min)
+        return cons
+
+
+def U_Q(util, q, Q):
+    # U(q)
+    if q not in Q:
+        return -np.Inf
+    else:
+        return util(cp.Variable(len(q), value=q)).value
+
+
+def U_Q_conj(util, weights, Q):
+    # max_q U(q) - la@q : q in Q
+    q = cp.Variable(len(Q))
     cost_dual = util(q) - weights @ q
-    constraints_dual = []
-    if q_max is not None:
-        constraints_dual.append(q <= q_max)
-    if q_min is not None:
-        constraints_dual.append(q >= q_min)
+    constraints_dual = Q.constraints(q)
     prob_dual = cp.Problem(cp.Maximize(cost_dual), constraints_dual)
     prob_dual.solve()
+    assert "optimal" in prob_dual.status
     return prob_dual.value, q.value
     # TODO, this is a short cut for proportional fail
     #    q_app = np.minimum(q_max, np.maximum(q_min, 1 / weights))
@@ -254,14 +306,15 @@ def dual_problem_app(util, weights, q_max=None, q_min=None):
 
 def dual_problem_app_f(util, weights_per_mode, f, q_max=None, q_min=None):
     q = cp.Variable(len(q_max))
-    c_s = {m: cp.Variable(len(w)) for m,w in weights_per_mode.items()}
+    c_s = {m: cp.Variable(len(w), nonneg=True) for m,w in weights_per_mode.items()}
 
     cost_dual = util(q)
     for m, weights in weights_per_mode.items():
-        cost_dual -= weights @ c_s[m]    
+        assert min(weights) >= 0
+        cost_dual -= weights @ c_s[m]
     const_q = 0
     for m, c in c_s.items():
-        const_q += f[m]*c
+        const_q += f[m] * c
     constraints_dual = [q == const_q]
     if q_max is not None:
         constraints_dual.append(q <= q_max)
@@ -269,7 +322,50 @@ def dual_problem_app_f(util, weights_per_mode, f, q_max=None, q_min=None):
         constraints_dual.append(q >= q_min)
     prob_dual = cp.Problem(cp.Maximize(cost_dual), constraints_dual)
     prob_dual.solve()
+    if "optimal" not in prob_dual.status:
+        a = 1
     return prob_dual.value, q.value, {m: c.value for m,c in c_s.items()}
+
+
+def V(network, util, c_m_t, Q):
+
+    c_m = {mode: np.zeros(len(network.users)) for mode in network.modes}
+    f = {mode: cp.Variable(1, nonneg=True) for mode in network.modes}
+    for mode, c_t in c_m_t.items():
+        for t, c in c_t.items():
+            c_m[mode][network.transmitters[t].users] += c
+    q_sum = cp.sum([f[mode] * c for mode, c in c_m.items()], axis=1)
+
+    constraints = (
+        [cp.sum(list(f.values())) == 1] + Q.constraints(q_sum)
+    )
+    prob = cp.Problem(cp.Maximize(util(q_sum)), constraints)
+    prob.solve()
+    if "optimal" not in prob.status:
+        raise InfeasibleOptimization()
+    return (
+        prob.value,
+        sum([f[mode].value * c for mode, c in c_m.items()]),
+        {mode: f_m.value for mode, f_m in f.items()}
+    )
+
+
+def V_conj(network, util, la_m_t, Q):
+
+    q = np.zeros(len(network.users))
+    v_opt = 0
+    for t_id, t in network.transmitters.items():
+        w_t = {}
+        q_m = {}
+        # TODO if we prove weights are the same for every mode we can drop the loop
+        for m in t.modes:         
+            val, q_t = U_Q_conj(util, la_m_t[m][t_id], Q[t.users])
+            w_t[m] = val
+            q_m[m] = q_t
+        m_opt_t, v_opt_t = max(w_t.items(), key=lambda k: k[1])
+        q[t.users] = q_m[m_opt_t]
+        v_opt += v_opt_t
+    return v_opt, q
 
 def weighted_sum_rate(weights):
     return lambda r: weights @ r
@@ -301,7 +397,7 @@ def optimize_app_phy(util, q_min, q_max, wsr_phy):
         )
 
         # solve the dual problem to provide bound and update
-        v_app, _ = dual_problem_app(util, la, q_max, q_min)
+        v_app, _ = U_Q_conj(util, la, Q_vector(q_min, q_max))
         v_phy, c = wsr_phy(la)
         A = np.c_[A, c]
 

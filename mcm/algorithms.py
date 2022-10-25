@@ -6,7 +6,8 @@ import numpy as np
 from mcm.network_optimization import (
     I_C,
     I_C_Q,
-    dual_problem_app,
+    U_Q_conj,
+    Q_vector,
     optimize_app_phy,
     proportional_fair,
 )
@@ -176,7 +177,7 @@ def optimize_dual_decomp_subgradient(A, q_min, q_max, target=None):
     weights = np.ones(len(q_min))
     for i in range(1000):
         v_phy, c = wsr_phy(weights)
-        v_app, q = dual_problem_app(util, weights, q_max, q_min)
+        v_app, q = U_Q_conj(util, weights, Q_vector(q_min, q_max))
         weights -= 1 / (i + 1) * (c - q)
         if i == 0:
             r = c
@@ -269,7 +270,7 @@ def dual_ployhedaral_approx(util, q_min, q_max, wsr_phy, update):
 
         primal_value, weights = update(U_i, q_i, c_i)
         v_phy, c = wsr_phy(weights)
-        v_app, q = dual_problem_app(util, weights, q_max, q_min)
+        v_app, q = U_Q_conj(util, weights, Q_vector(q_min, q_max))
         c_i.append(c)
         q_i.append(q)
         # v_app = U(q) - weights@q -> U(q) = v_app + weights@q
