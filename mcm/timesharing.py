@@ -28,7 +28,7 @@ def time_sharing_cvx(cost_function, R: R_m_t_approx, Q: Q_vector):
 
 
 def F_t_R_approx(cost_function, f, users, R_m, Q: Q_vector):
-    check_feasible(f, R_m, Q)   
+    check_feasible(f, R_m, Q)
     c_m = {}
     cons = []
     for mode, R in R_m.items():
@@ -39,13 +39,12 @@ def F_t_R_approx(cost_function, f, users, R_m, Q: Q_vector):
     cons += Q.constraints(q_sum)
     prob = solve_problem(cp.Maximize(cost_function(q_sum)), cons)
 
-    return (
-        prob.value,
-        {user: r for user, r in zip(users, q_sum.value)}
-    )
+    return (prob.value, {user: r for user, r in zip(users, q_sum.value)})
 
 
-def F_t_R_approx_conj(cost_function, la, users, R_m: dict[str, R_m_t_approx], Q: Q_vector):
+def F_t_R_approx_conj(
+    cost_function, la, users, R_m: dict[str, R_m_t_approx], Q: Q_vector
+):
 
     f = {m: cp.Variable(1, nonneg=True) for m in la}
     c_m = {}
@@ -55,18 +54,18 @@ def F_t_R_approx_conj(cost_function, la, users, R_m: dict[str, R_m_t_approx], Q:
         c_m[mode] = R.c
 
     q_sum = cp.sum([c for mode, c in c_m.items()], axis=1)
-    
+
     q = cp.Variable(len(users))
     cons.append(q == q_sum)
     cost = cost_function(q) - cp.sum([la[mode] * f[mode] for mode in f])
-  
-    cons += Q.constraints(q_sum)   
+
+    cons += Q.constraints(q_sum)
     prob = solve_problem(cp.Maximize(cost), cons)
 
     return (
         prob.value,
         {user: r for user, r in zip(users, q_sum.value)},
-        {m: f_m.value for m, f_m in f.items()}
+        {m: f_m.value for m, f_m in f.items()},
     )
 
 
@@ -85,13 +84,14 @@ def timesharing_network(cost_function, network, Q: Q_vector):
             cons += R.cons_in_approx(sum_alphas=f[mode])
             c_t_m[t][mode] = R.c
 
-
     # TODO cost function per transmitter should be more elegant
     r_constraints = {}
     for t in transmitters:
         for user_index, user in enumerate(t.users):
-            r_constraints[user] = r[user] == cp.sum([c_m[user_index] for c_m in c_t_m[t].values()])
-            
+            r_constraints[user] = r[user] == cp.sum(
+                [c_m[user_index] for c_m in c_t_m[t].values()]
+            )
+
     cons += list(r_constraints.values())
     cons.append(cp.sum([f_m for f_m in f.values()]) == 1)
     cons += Q.constraints(r)
@@ -150,5 +150,3 @@ def timesharing_network_dual(cost_function, la_m_t_s, network, q_min=None, q_max
             c3.dual_value,
         ],
     )
-
-

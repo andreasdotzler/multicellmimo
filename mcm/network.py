@@ -21,20 +21,21 @@ class Network:
         self.t_m = {}
         for mode in self.modes:
             self.t_m[mode] = {t for t in transmitters.values() if mode in t.modes}
-        
-  
+
     @property
     def alphas_m_t(self):
-        return {m: {
-            t.id: t.R_m_t_s[m].approx.alphas.value for t in ts_in_m}
-            for m, ts_in_m in self.t_m.items()}
-    
+        return {
+            m: {t.id: t.R_m_t_s[m].approx.alphas.value for t in ts_in_m}
+            for m, ts_in_m in self.t_m.items()
+        }
+
     @property
     def d_c_m_t(self):
-        return {m: {
-            t.id: t.R_m_t_s[m].approx.r_in_A_x_alpha.dual_value for t in ts_in_m}
-            for m, ts_in_m in self.t_m.items()}
-        
+        return {
+            m: {t.id: t.R_m_t_s[m].approx.r_in_A_x_alpha.dual_value for t in ts_in_m}
+            for m, ts_in_m in self.t_m.items()
+        }
+
     def initialize_approximation(self, As: A_m_t) -> None:
         for mode, trans_and_At in As.items():
             for trans, At in trans_and_At.items():
@@ -55,7 +56,9 @@ class Network:
         assert len(weights) == len(max_rates)
         return max_value, max_rates
 
-    def wsr_per_mode_and_transmitter(self, weights: Optional[Weights] = None) -> Tuple[V_m_t, A_m_t]:
+    def wsr_per_mode_and_transmitter(
+        self, weights: Optional[Weights] = None
+    ) -> Tuple[V_m_t, A_m_t]:
         values: V_m_t = {}
         A_max: A_m_t = {}
 
@@ -76,7 +79,9 @@ class Network:
                 A_max[mode][transmitter_id] = rates
         return values, A_max
 
-    def scheduling(self, fractions: Fractions, util: Any, Q: Q_vector) -> Tuple[float, np.ndarray, V_m_t, dict[int, dict[str, float]], dict[int, float]]:
+    def scheduling(
+        self, fractions: Fractions, util: Any, Q: Q_vector
+    ) -> Tuple[float, np.ndarray, V_m_t, dict[int, dict[str, float]], dict[int, float]]:
         F = 0
         F_t_s = {}
         r = np.zeros(len(self.users))
@@ -137,4 +142,3 @@ class Network:
         assert prob.status == "optimal"
         f_new = {m: ff.value[0] for m, ff in f.items()}
         return prob.value, f_new
-        

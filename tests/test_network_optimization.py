@@ -42,11 +42,7 @@ def test_global_network(As, network: Network, algorithm, seed):
     Q = Q_vector(q_min=q_min, q_max=q_max)
     # q_max[29] = 0.15
     network.initialize_approximation(As)
-    (
-        value,
-        rates,
-         _
-    ) = timesharing_network(proportional_fair, network, Q)
+    (value, rates, _) = timesharing_network(proportional_fair, network, Q)
 
     assert all(rates >= q_min * 0.97)
     assert all(rates * 0.97 <= q_max)
@@ -57,9 +53,7 @@ def test_global_network(As, network: Network, algorithm, seed):
     # is the full timesharing
     if algorithm in [protocol3, protocol4, protocol6]:
         network.initialize_approximation(As)
-    opt_value_explicit, opt_q_explicit, _, _ = algorithm(
-        proportional_fair, Q, network
-    )
+    opt_value_explicit, opt_q_explicit, _, _ = algorithm(proportional_fair, Q, network)
     assert opt_value_explicit == pytest.approx(value, 1e-2)
     assert opt_q_explicit == pytest.approx(rates, rel=1e-1, abs=1e-1)
 

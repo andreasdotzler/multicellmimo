@@ -42,7 +42,7 @@ def protocol3(util, Q: Q_vector, network: Network):
                 break
             except InfeasibleOptimization:
                 LOGGER.info(f"Infeasible for {f_temp}")
-                
+
         f_t = {m: f.value for m, f in f_t_new.items()}
 
         improvement = v_n - max_util

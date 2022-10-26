@@ -32,7 +32,9 @@ def protocol6(util, Q: Q_vector, network: Network):
 
                 for l in range(100):
                     # Solve approximated problem
-                    F_t, r_t, alpha_t, c_m, [d_f_t_m, d_c_m, la] = t.scheduling(f_t, util, Q[t.users])
+                    F_t, r_t, alpha_t, c_m, [d_f_t_m, d_c_m, la] = t.scheduling(
+                        f_t, util, Q[t.users]
+                    )
                     # solve the dual problem to provide bound and update
                     v_phy = 0
                     assert 1 / np.array(list(r_t.values())) == pytest.approx(la, 1e-3)

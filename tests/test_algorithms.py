@@ -43,4 +43,3 @@ def test_algorithms(A, optimize):
     assert opt_value == pytest.approx(value, 1e-2)
     assert rates in Q
     assert rates in R
-    

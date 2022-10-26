@@ -7,7 +7,9 @@ import numpy as np
 
 from mcm.timesharing import time_sharing_cvx
 from mcm.regions import Q_vector, R_m_t_approx
+
 LOGGER = logging.getLogger(__name__)
+
 
 def wsr_for_A(weights, A):
     max_i = np.argmax(weights @ A)
@@ -27,6 +29,7 @@ def I_C_Q(A, Q: Q_vector):
 def weighted_sum_rate(weights):
     def weighted_sum_rate(r):
         return weights @ r
+
     return weighted_sum_rate
 
 
@@ -38,6 +41,7 @@ def proportional_fair(r):
 def app_layer(weights):
     def app_layer(r):
         return cp.atoms.affine.sum.Sum(cp.atoms.elementwise.log.log(r)) - weights @ r
+
     return app_layer
 
 
@@ -125,8 +129,6 @@ def V_conj(network, util, la_m_t, Q):
         q[t.users] = q_m[m_opt_t]
         v_opt += v_opt_t
     return v_opt, q
-
-
 
 
 def optimize_app_phy(util, Q: Q_vector, wsr_phy):

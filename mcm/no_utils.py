@@ -1,6 +1,9 @@
 import cvxpy as cp
+
+
 class InfeasibleOptimization(Exception):
     pass
+
 
 def solve_problem(util, cons):
     prob = cp.Problem(util, cons)

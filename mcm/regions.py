@@ -10,7 +10,7 @@ class R_m_t:
         self._wsr = wsr
         self.users = users
         self.approx = R_m_t_approx(self.users)
-    
+
     def wsr(self, weights):
         val, rates = self._wsr(weights)
         self.approx.A = np.c_[self.approx.A, rates.reshape((len(rates), 1))]
@@ -20,8 +20,8 @@ class R_m_t:
         self.approx = R_m_t_approx(self.users)
 
 
-class R_m_t_approx():
-    def __init__(self, users=[], A=None, in_tol = 1e-3):
+class R_m_t_approx:
+    def __init__(self, users=[], A=None, in_tol=1e-3):
         self.users = users
         if A is not None:
             self.A = A
@@ -50,15 +50,15 @@ class R_m_t_approx():
 
     def __contains__(self, q):
         # TODO should we minimize distance?
-        alphas = cp.Variable(self.A.shape[1], nonneg=True)        
+        alphas = cp.Variable(self.A.shape[1], nonneg=True)
         solve_problem(cp.Minimize(cp.sum(alphas)), [q == self.A @ alphas])
         return sum(alphas.value) <= (1 + self.in_tol)
-        
 
-    
 
 class Q_vector:
-    def __init__(self, q_min: Optional[np.ndarray] = None, q_max: Optional[np.ndarray] = None):
+    def __init__(
+        self, q_min: Optional[np.ndarray] = None, q_max: Optional[np.ndarray] = None
+    ):
         self.q_max = q_max
         self.q_min = q_min
         if q_max is not None and q_min is not None:
@@ -77,7 +77,7 @@ class Q_vector:
             return 0
 
     def __contains__(self, q: np.ndarray):
-        # TODO: compute distance and add tolerance 
+        # TODO: compute distance and add tolerance
         return not (self.q_max is not None and any(q > self.q_max)) or (
             self.q_min is not None and any(q < self.q_min)
         )
@@ -91,7 +91,7 @@ class Q_vector:
             return self.q_geq_qmin
         else:
             return None
-        
+
     def con_max(self, q):
         if self.q_max is not None:
             self.q_leq_qmax = q <= self.q_max
@@ -111,4 +111,3 @@ class Q_vector:
 
     def dual_values(self):
         return self.q_geq_qmin.dual_value, self.q_leq_qmax.dual_value
-        

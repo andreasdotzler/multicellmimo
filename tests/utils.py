@@ -41,8 +41,7 @@ def gen_test_network(n_rate_points_per_mode_and_transmitter=1, sample_function=n
                 users_transmitter_mode[t] = {}
             wsr_transmitter_mode[t][mode] = I_C(Am[t])
             users_transmitter_mode[t][mode] = users
-    
-    
+
     for t in wsr_transmitter_mode:
         R_m_t_s = {}
         users = users_transmitter_mode[t]
