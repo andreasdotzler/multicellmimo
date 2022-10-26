@@ -2,6 +2,8 @@ import numpy as np
 import cvxpy as cp
 from typing import Optional
 
+from mcm.no_utils import InfeasibleOptimization, solve_problem
+
 
 class R_m_t:
     def __init__(self, users, wsr):
@@ -19,7 +21,7 @@ class R_m_t:
 
 
 class R_m_t_approx():
-    def __init__(self, users=[], A=None):
+    def __init__(self, users=[], A=None, in_tol = 1e-3):
         self.users = users
         if A is not None:
             self.A = A
@@ -30,6 +32,7 @@ class R_m_t_approx():
         self.alphas = None
         self.r_in_A_x_alpha = None
         self.sum_alpha = None
+        self.in_tol = in_tol
 
     def cons_in_approx(self, c=None, sum_alphas=1):
         n_schedules = self.A.shape[1]
@@ -45,9 +48,13 @@ class R_m_t_approx():
     def dual_values(self):
         return self.r_in_A_x_alpha.dual_value, self.sum_alpha.dual_value
 
-    def in_approx(self, q):
-        pass
-        # todo run optimization 
+    def __contains__(self, q):
+        # TODO should we minimize distance?
+        alphas = cp.Variable(self.A.shape[1], nonneg=True)        
+        solve_problem(cp.Minimize(cp.sum(alphas)), [q == self.A @ alphas])
+        return sum(alphas.value) <= (1 + self.in_tol)
+        
+
     
 
 class Q_vector:
@@ -70,6 +77,7 @@ class Q_vector:
             return 0
 
     def __contains__(self, q: np.ndarray):
+        # TODO: compute distance and add tolerance 
         return not (self.q_max is not None and any(q > self.q_max)) or (
             self.q_min is not None and any(q < self.q_min)
         )

@@ -19,8 +19,7 @@ def I_C(A):
     return lambda weights: wsr_for_A(weights, A)
 
 
-def I_C_Q(A, q_min, q_max):
-    Q = Q_vector(q_min=q_min, q_max=q_max)
+def I_C_Q(A, Q: Q_vector):
     R = R_m_t_approx(A=A)
     return lambda weights: time_sharing_cvx(weighted_sum_rate(weights), R, Q)
 
@@ -66,8 +65,8 @@ def U_Q_conj(util, weights, Q):
     #    assert abs(v_app_1 - v_app) <= 10**-6
 
 
-def dual_problem_app_f(util, weights_per_mode, f, q_max=None, q_min=None):
-    q = cp.Variable(len(q_max))
+def dual_problem_app_f(util, weights_per_mode, f, Q):
+    q = cp.Variable(len(Q))
     c_s = {m: cp.Variable(len(w), nonneg=True) for m, w in weights_per_mode.items()}
 
     cost_dual = util(q)
@@ -78,10 +77,11 @@ def dual_problem_app_f(util, weights_per_mode, f, q_max=None, q_min=None):
     for m, c in c_s.items():
         const_q += f[m] * c
     constraints_dual = [q == const_q]
-    if q_max is not None:
-        constraints_dual.append(q <= q_max)
-    if q_min is not None:
-        constraints_dual.append(q >= q_min)
+    # TODO convert to Q.constraints
+    if Q.q_max is not None:
+        constraints_dual.append(q <= Q.q_max)
+    if Q.q_min is not None:
+        constraints_dual.append(q >= Q.q_min)
     prob_dual = cp.Problem(cp.Maximize(cost_dual), constraints_dual)
     prob_dual.solve()
     if "optimal" not in prob_dual.status:

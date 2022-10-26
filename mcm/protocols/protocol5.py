@@ -17,8 +17,10 @@ def protocol5(util, Q: Q_vector, network: Network):
 
     for n in range(1, 1000):
 
-        approx_value, _, alphas, [weights, _, _, _, _, la_m_t] = timesharing_network(util, network, Q)
+        approx_value, rates, weights = timesharing_network(util, network, Q)
         # TODO dual_app
+        alphas = network.alphas_m_t
+        la_m_t = network.d_c_m_t
         q_app = np.minimum(Q.q_max, np.maximum(Q.q_min, 1 / weights))
         q_app[weights <= 0] = Q.q_max[weights <= 0]
         v_app_1 = sum(np.log(q_app)) - weights @ q_app

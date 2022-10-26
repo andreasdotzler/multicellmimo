@@ -15,17 +15,16 @@ from mcm.regions import Q_vector
 LOGGER = logging.getLogger(__name__)
 
 
-def optimize_primal_sub(A, q_min, q_max, target=None):
+def optimize_primal_sub(A, Q: Q_vector, target=None):
     # direct optimization of the problem in the primal domain via subgradient
     # unconstrained_primal_sub
-    n_users = len(q_min)
-    assert len(q_max) == n_users
+    n_users = len(Q_vector)
 
     # add the origin to the points
     A = np.c_[np.zeros(n_users), A]
     _, n_schedules = A.shape
 
-    rates = q_min
+    rates = Q.q_min
 
     max_util = sum(np.log(rates))
     for n in range(1000):
@@ -40,7 +39,7 @@ def optimize_primal_sub(A, q_min, q_max, target=None):
         c_d_U = [d_U == scale * 1 / rates]
 
         c_d_Q = []
-        for r_i, q_min_i, q_max_i, d_Q_i in zip(rates, q_min, q_max, d_Q):
+        for r_i, q_min_i, q_max_i, d_Q_i in zip(rates, Q.q_min, Q.q_max, d_Q):
             if abs(r_i - q_min_i) <= 10**-6:
                 c_d_Q.append(d_Q_i >= 0)
             elif abs(r_i - q_max_i) <= 10**-6:
@@ -55,7 +54,7 @@ def optimize_primal_sub(A, q_min, q_max, target=None):
 
         alpha = cp.Variable(n_schedules, nonneg=True)
         feasible_C = [rates + subgradient == A @ alpha, cp.sum(alpha) <= 1]
-        feasible_Q = [rates + subgradient >= q_min, rates + subgradient <= q_max]
+        feasible_Q = [rates + subgradient >= Q.q_min, rates + subgradient <= Q.q_max]
 
         constraints = c_d_U + c_d_Q + c_d_C + sub_sum + feasible_Q + feasible_C
         weights = np.random.normal(size=len(rates))
@@ -83,9 +82,9 @@ def optimize_primal_sub(A, q_min, q_max, target=None):
     return max_util, rates, None
 
 
-def optimize_primal_subgradient_projected(A, q_min, q_max, target=None):
+def optimize_primal_subgradient_projected(A, Q: Q_vector, target=None):
 
-    rates = q_min
+    rates = Q.q_min
     n_users, n_schedules = A.shape
     step_size = 1
     max_util = sum(np.log(rates))
@@ -101,8 +100,8 @@ def optimize_primal_subgradient_projected(A, q_min, q_max, target=None):
         constraints = [
             r_l_1 == A @ alpha,
             cp.sum(alpha) <= 1,
-            r_l_1 >= q_min,
-            r_l_1 <= q_max,
+            r_l_1 >= Q.q_min,
+            r_l_1 <= Q.q_max,
         ]
         prob = cp.Problem(
             cp.Minimize(cp.sum_squares(r_l_1 - (rates + step_size * subgradient))),
@@ -121,9 +120,9 @@ def optimize_primal_subgradient_projected(A, q_min, q_max, target=None):
     return max_util, rates, None
 
 
-def optimize_primal_subgradient_rosen(A, q_min, q_max, target=None):
+def optimize_primal_subgradient_rosen(A, Q: Q_vector, target=None):
 
-    rates = q_min
+    rates = Q.q_min
     n_users, n_schedules = A.shape
     step_size = 1
     max_util = sum(np.log(rates))
@@ -138,8 +137,8 @@ def optimize_primal_subgradient_rosen(A, q_min, q_max, target=None):
         constraints = [
             rates + p_s == A @ alpha,
             cp.sum(alpha) <= 1,
-            rates + p_s >= q_min,
-            rates + p_s <= q_max,
+            rates + p_s >= Q.q_min,
+            rates + p_s <= Q.q_max,
         ]
         # prob = cp.Problem(cp.Minimize(cp.sum_squares(r_l_1 - (rates + step_size * subgradient) )), constraints)
         prob = cp.Problem(cp.Minimize(cp.sum_squares(p_s - subgradient)), constraints)
@@ -157,27 +156,28 @@ def optimize_primal_subgradient_rosen(A, q_min, q_max, target=None):
     return max_util, rates, None
 
 
-def optimize_primal_column(A, q_min, q_max, target=None):
+def optimize_primal_column(A, Q: Q_vector, target=None):
     n_users = A.shape[0]
-    wsr_C_Q = I_C_Q(A, q_min, q_max)
+    wsr_C_Q = I_C_Q(A, Q)
+    # todo check why we need this bound
+    Q_up = Q_vector(q_min=np.array([0.001] * n_users), q_max=np.array([10] * n_users))
     opt, r, alpha, _ = optimize_app_phy(
         proportional_fair,
-        q_min=np.array([0.001] * n_users),
-        q_max=np.array([10] * n_users),
+        Q_up,
         wsr_phy=wsr_C_Q,
     )
     return opt, r, alpha
 
 
-def optimize_dual_decomp_subgradient(A, q_min, q_max, target=None):
+def optimize_dual_decomp_subgradient(A, Q: Q_vector, target=None):
     # Application Layer and Physical Layer Decomposition
     # Dual Sub-Gradient
     util = proportional_fair
     wsr_phy = I_C(A)
-    weights = np.ones(len(q_min))
+    weights = np.ones(len(Q))
     for i in range(1000):
         v_phy, c = wsr_phy(weights)
-        v_app, q = U_Q_conj(util, weights, Q_vector(q_min, q_max))
+        v_app, q = U_Q_conj(util, weights, Q)
         weights -= 1 / (i + 1) * (c - q)
         if i == 0:
             r = c
@@ -236,41 +236,41 @@ def poly_multicut_peruser(U_i, q_i, c_i):
     return prob.value, la.value
 
 
-def optimize_dual_cuttingplane(A, q_min, q_max, target=None):
+def optimize_dual_cuttingplane(A, Q: Q_vector, target=None):
     update = ploy_cutting_plane
     wsr_phy = I_C(A)
     util = proportional_fair
-    return dual_ployhedaral_approx(util, q_min, q_max, wsr_phy, update)
+    return dual_ployhedaral_approx(util, Q, wsr_phy, update)
 
 
-def optimize_dual_multicut(A, q_min, q_max, target=None):
+def optimize_dual_multicut(A, Q: Q_vector, target=None):
     update = poly_multicut
     wsr_phy = I_C(A)
     util = proportional_fair
-    return dual_ployhedaral_approx(util, q_min, q_max, wsr_phy, update)
+    return dual_ployhedaral_approx(util, Q, wsr_phy, update)
 
 
-def optimize_dual_multicut_peruser(A, q_min, q_max, target=None):
+def optimize_dual_multicut_peruser(A, Q: Q_vector, target=None):
     update = poly_multicut_peruser
     wsr_phy = I_C(A)
     util = proportional_fair
-    return dual_ployhedaral_approx(util, q_min, q_max, wsr_phy, update)
+    return dual_ployhedaral_approx(util, Q, wsr_phy, update)
 
 
-def dual_ployhedaral_approx(util, q_min, q_max, wsr_phy, update):
+def dual_ployhedaral_approx(util, Q: Q_vector, wsr_phy, update):
     # we evaluate the dual function for lambda = [-Inf, ..., -Inf]
     # we know the result is q_min
-    v_q_min = util(cp.Variable(len(q_min), value=q_min)).value
+    v_q_min = util(cp.Variable(len(Q), value=Q.q_min)).value
     U_i = [v_q_min]
-    c_i = [q_min]
-    q_i = [q_min]
+    c_i = [Q.q_min]
+    q_i = [Q.q_min]
     best_dual = np.Inf
 
     for i in range(1000):
 
         primal_value, weights = update(U_i, q_i, c_i)
         v_phy, c = wsr_phy(weights)
-        v_app, q = U_Q_conj(util, weights, Q_vector(q_min, q_max))
+        v_app, q = U_Q_conj(util, weights, Q)
         c_i.append(c)
         q_i.append(q)
         # v_app = U(q) - weights@q -> U(q) = v_app + weights@q
@@ -287,8 +287,8 @@ def dual_ployhedaral_approx(util, q_min, q_max, wsr_phy, update):
     return primal_value, q, None
 
 
-def optimize_app_phy_rateregionapprox(A, q_min, q_max, target=None):
+def optimize_app_phy_rateregionapprox(A, Q: Q_vector, target=None):
     wsr_phy = I_C(A)
     util = proportional_fair
-    primal_value, q, alpha, _ = optimize_app_phy(util, q_min, q_max, wsr_phy)
+    primal_value, q, alpha, _ = optimize_app_phy(util, Q, wsr_phy)
     return primal_value, q, alpha

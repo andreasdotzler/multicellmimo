@@ -3,7 +3,7 @@ import numpy as np
 
 from typing import Optional, Tuple, Any, Dict
 from mcm.transmitter import Transmitter
-from mcm.typing import A_m_t, Fractions, V_m_t, Weights
+from mcm.my_typing import A_m_t, Fractions, V_m_t, Weights
 from mcm.regions import Q_vector
 
 
@@ -18,7 +18,23 @@ class Network:
             self.modes += t.modes
         self.users = list(set(self.users))
         self.modes = list(set(self.modes))
-
+        self.t_m = {}
+        for mode in self.modes:
+            self.t_m[mode] = {t for t in transmitters.values() if mode in t.modes}
+        
+  
+    @property
+    def alphas_m_t(self):
+        return {m: {
+            t.id: t.R_m_t_s[m].approx.alphas.value for t in ts_in_m}
+            for m, ts_in_m in self.t_m.items()}
+    
+    @property
+    def d_c_m_t(self):
+        return {m: {
+            t.id: t.R_m_t_s[m].approx.r_in_A_x_alpha.dual_value for t in ts_in_m}
+            for m, ts_in_m in self.t_m.items()}
+        
     def initialize_approximation(self, As: A_m_t) -> None:
         for mode, trans_and_At in As.items():
             for trans, At in trans_and_At.items():
@@ -97,7 +113,6 @@ class Network:
                 At = a.reshape(len(a), 1)
                 transmitter.set_approximation(mode, At)
 
-
     def resource_allocation(self, f_t, d_f_n_s, F_t_s) -> Tuple[int, float]:
         i = len(f_t) - 1
         mu = {}
@@ -122,3 +137,4 @@ class Network:
         assert prob.status == "optimal"
         f_new = {m: ff.value[0] for m, ff in f.items()}
         return prob.value, f_new
+        

@@ -16,6 +16,7 @@ from mcm.protocols.protocol6 import protocol6
 from mcm.timesharing import timesharing_network
 from mcm.network_optimization import proportional_fair
 from mcm.regions import Q_vector
+from mcm.network import Network
 
 LOGGER = logging.getLogger(__name__)
 
@@ -34,7 +35,7 @@ LOGGER = logging.getLogger(__name__)
 @pytest.mark.parametrize(
     "As, network", [gen_test_network(), gen_test_network(20, np.random.random)]
 )
-def test_global_network(As, network, algorithm, seed):
+def test_global_network(As, network: Network, algorithm, seed):
     q_min = np.array([0.01] * 30)
     # q_min[0] = 0.5
     q_max = np.array([10.0] * 30)
@@ -44,13 +45,12 @@ def test_global_network(As, network, algorithm, seed):
     (
         value,
         rates,
-        alphas_network,
-        [user_rates, w_min, w_max, d_f_network, d_sum_f, d_c_m_t],
+         _
     ) = timesharing_network(proportional_fair, network, Q)
 
     assert all(rates >= q_min * 0.97)
     assert all(rates * 0.97 <= q_max)
-    verfiy_fractional_schedule(alphas_network)
+    verfiy_fractional_schedule(network.alphas_m_t)
     LOGGER.info(f"expected result: {value}")
     network.reset_approximation()
     # scheduling works on the approximations, let us assume here the approximation

@@ -39,11 +39,8 @@ def test_algorithms(A, optimize):
     Q = Q_vector(q_min=q_min, q_max=q_max)
     value, rates = time_sharing_cvx(proportional_fair, R, Q)
     # TODO enforce all algorithms to return schedules
-    opt_value, q, _ = optimize(A, q_min, q_max, target=value)
+    opt_value, q, _ = optimize(A, Q, target=value)
     assert opt_value == pytest.approx(value, 1e-2)
-    # check if rates are feasible
-    Q = Q_vector(q_min=q*0.95, q_max=q)    
-    time_sharing_cvx(proportional_fair, R, Q)
-    alpha_check = R.alphas
-    assert sum(alpha_check) == pytest.approx(1, 1e-6)
-    assert sum(np.log(A @ alpha_check)) == pytest.approx(value, 1e-2)
+    assert rates in Q
+    assert rates in R
+    

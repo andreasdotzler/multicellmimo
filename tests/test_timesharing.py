@@ -136,7 +136,6 @@ def test_timesharing_fixed_fractions():
         d_sum_f_2 = {mode: R.sum_alpha.dual_value for mode, R in R_m.items()}
         d_c_m_2 = {mode: R.r_in_A_x_alpha.dual_value for mode, R in R_m.items()}
 
-
         q_2 = np.zeros(len(t.users))
         for m in t.modes:
             assert t.users_per_mode[m] == t.users
@@ -176,10 +175,12 @@ def test_fixed_f():
     (
         value,
         rates,
-        alphas_network,
-        [d_rates, w_min, w_max, d_f_network, d_sum_f, d_c_m_t],
+        d_rates
     ) = timesharing_network(proportional_fair, network, Q)
     # verfiy the dual variables
+    d_c_m_t = network.d_c_m_t
+    alphas_network = network.alphas_m_t
+    (w_min, w_max) = Q.dual_values()
     assert 1 / rates + w_min - w_max - d_rates == pytest.approx(
         np.zeros(len(rates)), rel=1e-2, abs=1e-1
     )
@@ -262,7 +263,7 @@ def test_fixed_f():
             [d_f_t_m, d_c_m, la],
         ) = t.scheduling(fractions, proportional_fair, Q[t.users])
         v_a, q, c = dual_problem_app_f(
-            proportional_fair, d_c_m, fractions, q_max[t.users], q_min[t.users]
+            proportional_fair, d_c_m, fractions, Q[t.users]
         )
 
         v_p = 0

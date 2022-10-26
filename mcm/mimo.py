@@ -7,7 +7,7 @@ import cvxpy as cp
 import numpy as np
 from typing import List, Tuple, Optional
 from .mimo_utils import inv_sqrtm, sqrtm, logdet, log, pinv, argsort
-from .typing import Matrix
+from .my_typing import Matrix
 
 LOGGER = logging.getLogger(__name__)
 

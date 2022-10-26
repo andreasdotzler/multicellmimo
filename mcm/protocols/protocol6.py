@@ -32,9 +32,7 @@ def protocol6(util, Q: Q_vector, network: Network):
 
                 for l in range(100):
                     # Solve approximated problem
-                    F_t, r_t, alpha_t, c_m, [d_f_t_m, d_c_m, la] = t.scheduling(
-                        f_t, util, Q[t.users]
-                    )
+                    F_t, r_t, alpha_t, c_m, [d_f_t_m, d_c_m, la] = t.scheduling(f_t, util, Q[t.users])
                     # solve the dual problem to provide bound and update
                     v_phy = 0
                     assert 1 / np.array(list(r_t.values())) == pytest.approx(la, 1e-3)
@@ -42,15 +40,13 @@ def protocol6(util, Q: Q_vector, network: Network):
                         v, _ = t.wsr(t_weights=la, mode=mode)
                         v_phy += f_t[mode] * v
                     # TODO we do not want this one, let us explictly calculate
-                    v_app, q, c = dual_problem_app_f(
-                        util, d_c_m, f_t, Q.q_max[t.users], Q.q_min[t.users]
-                    )
+                    v_app, q, c = dual_problem_app_f(util, d_c_m, f_t, Q[t.users])
                     dual_value = v_app + v_phy
                     gap = abs(dual_value - F_t) / abs(dual_value)
                     LOGGER.info(
                         f"\t transmitter {t_id} - primal {F_t} - dual {dual_value} - gap {gap}"
                     )
-                    if gap < 0.01:
+                    if gap < 0.0001:
                         break
                 d_f[t_id] = {m: la @ c for m, c in c_m.items()}
                 # d_f[t_id] = {m: max(la @ t.As_per_mode[m]) for m in t.modes}
@@ -81,6 +77,6 @@ def protocol6(util, Q: Q_vector, network: Network):
         LOGGER.info(
             f"Explicit: Iteration {j} - Approximation {approx} - Best Primal Value {max_util}"
         )
-        if approx - max_util <= 1e-3:
+        if abs(approx - max_util) / max_util <= 1e-6:
             break
     return F, r, None, None

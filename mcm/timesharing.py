@@ -1,24 +1,16 @@
-import fractions
 import numpy as np
 import cvxpy as cp
 import logging
-from numpy.lib.arraysetops import unique
 
-from mcm.no_utils import InfeasibleOptimization
+
+from mcm.no_utils import InfeasibleOptimization, solve_problem
 from mcm.regions import Q_vector, R_m_t_approx
+from mcm.my_typing import Fractions, R_m
 
 LOGGER = logging.getLogger(__name__)
 
-def solve_problem(util, cons):
-    prob = cp.Problem(util, cons)
-    prob.solve()
-    if "infeasible" in prob.status:
-        raise InfeasibleOptimization()
-    assert "optimal" in prob.status, f"unable to solve problem: {prob.status}"
-    return prob
 
-
-def check_feasible(f, R_m, Q):
+def check_feasible(f: Fractions, R_m: R_m, Q: Q_vector) -> None:
     if all(f[m] < 1e-3 for m in R_m):
         LOGGER.warning("no resources allocated")
         if any(Q.q_min >= 0):
@@ -32,13 +24,11 @@ def time_sharing_cvx(cost_function, R: R_m_t_approx, Q: Q_vector):
     r = cp.Variable(len(Q), pos=True)
     cons = R.cons_in_approx(r) + Q.constraints(r)
     prob = solve_problem(cp.Maximize(cost_function(r)), cons)
- 
     return (prob.value, r.value)
 
 
 def F_t_R_approx(cost_function, f, users, R_m, Q: Q_vector):
-    check_feasible(f, R_m, Q)
-   
+    check_feasible(f, R_m, Q)   
     c_m = {}
     cons = []
     for mode, R in R_m.items():
@@ -46,7 +36,7 @@ def F_t_R_approx(cost_function, f, users, R_m, Q: Q_vector):
         c_m[mode] = R.c
 
     q_sum = cp.sum([f[mode] * c for mode, c in c_m.items() if f[mode] >= 1e-3], axis=1)
-    cons += Q.constraints(q_sum)   
+    cons += Q.constraints(q_sum)
     prob = solve_problem(cp.Maximize(cost_function(q_sum)), cons)
 
     return (
@@ -76,89 +66,42 @@ def F_t_R_approx_conj(cost_function, la, users, R_m: dict[str, R_m_t_approx], Q:
     return (
         prob.value,
         {user: r for user, r in zip(users, q_sum.value)},
-        {m: f_m.value for m,f_m in f.items()}
+        {m: f_m.value for m, f_m in f.items()}
     )
+
 
 def timesharing_network(cost_function, network, Q: Q_vector):
 
-    alphas = {m: {} for m in network.modes}
-
-    c_m_t = {m: {} for m in network.modes}
-    c_m_t_constraints = {m: {} for m in network.modes}
-
-    for t_id, transmitter in network.transmitters.items():
-        for mode, rates in transmitter.As_per_mode.items():
-            alphas[mode][t_id] = cp.Variable(rates.shape[1], nonneg=True)
-            users = transmitter.users_per_mode[mode]
-            c_m_t[mode][t_id] = cp.Variable(len(users), nonneg=True)
-            c_m_t_constraints[mode][t_id] = (
-                c_m_t[mode][t_id] == transmitter.As_per_mode[mode] @ alphas[mode][t_id]
-            )
-
-    r_constraints = {}
-
-    for t_id, transmitter in network.transmitters.items():
-        for mode in transmitter.modes:
-            users = transmitter.users_per_mode[mode]
-            for user_index, user in enumerate(users):
-                constraint = c_m_t[mode][t_id][user_index]
-                if user in r_constraints:
-                    r_constraints[user] += constraint
-                else:
-                    r_constraints[user] = constraint
-
-    n_users = len(r_constraints)
+    f = {m: cp.Variable(1, nonneg=True) for m in network.modes}
+    n_users = len(network.users)
     r = cp.Variable(n_users, nonneg=True)
-    user_rate_constraints = [r_k == r_constraints[user] for user, r_k in enumerate(r)]
-    cost = cost_function(r)
+    transmitters = network.transmitters.values()
+    c_t_m = {t: {} for t in transmitters}
 
-    c2 = Q.con_min(r)
-    c3 = Q.con_max(r)
+    cons = []
+    for t in transmitters:
+        for mode, R in t.R_m_t_s.items():
+            R = R.approx
+            cons += R.cons_in_approx(sum_alphas=f[mode])
+            c_t_m[t][mode] = R.c
 
-    f = cp.Variable(len(alphas), nonneg=True)
-    c5 = []
-    f_constraints = {}
-    for (mode, alphas_per_mode), sum_m in zip(alphas.items(), f):
-        f_constraints[mode] = {}
-        for transmitter, alpha in alphas_per_mode.items():
-            con = cp.sum(alpha) == sum_m
-            f_constraints[mode][transmitter] = con
-            c5.append(con)
 
-    c6 = cp.sum(f) == 1
-    c_m_t_constraints_list = []
-    for mode, cons in c_m_t_constraints.items():
-        for con in cons.values():
-            c_m_t_constraints_list.append(con)
-    constraints = user_rate_constraints + [c2] + [c3] + c5 + [c6] + c_m_t_constraints_list
-    prob = cp.Problem(cp.Maximize(cost), constraints)
-    prob.solve()
+    # TODO cost function per transmitter should be more elegant
+    r_constraints = {}
+    for t in transmitters:
+        for user_index, user in enumerate(t.users):
+            r_constraints[user] = r[user] == cp.sum([c_m[user_index] for c_m in c_t_m[t].values()])
+            
+    cons += list(r_constraints.values())
+    cons.append(cp.sum([f_m for f_m in f.values()]) == 1)
+    cons += Q.constraints(r)
 
-    if "infeasible" in prob.status:
-        raise InfeasibleOptimization()
-    assert "optimal" in prob.status
+    prob = solve_problem(cp.Maximize(cost_function(r)), cons)
 
     return (
         prob.value,
         r.value,
-        {
-            m: {t: alpha.value for t, alpha in alphas_per_mode.items()}
-            for m, alphas_per_mode in alphas.items()
-        },
-        [
-            np.array([c.dual_value for c in user_rate_constraints]),
-            c2.dual_value,
-            c3.dual_value,
-            {
-                mode: {t: c.dual_value for t, c in cons.items()}
-                for mode, cons in f_constraints.items()
-            },
-            c6.dual_value,
-            {
-                mode: {t: c.dual_value for t, c in cons.items()}
-                for mode, cons in c_m_t_constraints.items()
-            },
-        ],
+        np.array([r_constraints[user].dual_value for user in network.users]),
     )
 
 
