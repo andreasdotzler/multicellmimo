@@ -4,7 +4,7 @@ import numpy as np
 from typing import Callable
 from mcm.timesharing import F_t_R_approx
 from mcm.network_optimization import U_Q_conj
-from mcm.regions import Q_vector, R_m_t
+from mcm.regions import Q_vector, R_m_t, R_m_t_approx
 
 
 class Transmitter:
@@ -51,7 +51,7 @@ class Transmitter:
         raise RunTimeError("Do not use this ")
 
     def set_approximation(self, mode, A):
-        self.R_m_t_s[mode].approx.A = A
+        self.R_m_t_s[mode].approx = R_m_t_approx(self.users, A)
 
     def reset_approximations(self):
         for R in self.R_m_t_s.values():

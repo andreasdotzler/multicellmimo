@@ -24,7 +24,14 @@ class R_m_t_approx:
     def __init__(self, users=[], A=None, in_tol=1e-3):
         self.users = users
         if A is not None:
-            self.A = A
+            if len(A.shape) == 1:
+                # if A is a vector we convert it to a matrix
+                # the view does not copy the data
+                A_v = A.view()
+                A_v.shape = (A.shape[0], 1)
+                self.A = A_v
+            else:
+                self.A = A
         else:
             self.A = np.empty([len(users), 0])
 

@@ -105,10 +105,10 @@ def timesharing_network(cost_function, network, Q: Q_vector):
     )
 
 
-def timesharing_network_dual(cost_function, la_m_t_s, network, q_min=None, q_max=None):
+def timesharing_network_dual(cost_function, la_m_t_s, network, Q: Q_vector):
 
     c_m_t = {m: {} for m in network.modes}
-    c_m_t_constraints = {m: {} for m in network.modes}
+
     w_sum = 0
     for t_id, transmitter in network.transmitters.items():
         for mode, rates in transmitter.As_per_mode.items():
@@ -133,10 +133,8 @@ def timesharing_network_dual(cost_function, la_m_t_s, network, q_min=None, q_max
     user_rate_constraints = [r_k == r_constraints[user] for user, r_k in enumerate(r)]
     cost = cost_function(r) - w_sum
 
-    c2 = r >= q_min
-    c3 = r <= q_max
 
-    constraints = user_rate_constraints + [c2, c3]
+    constraints = user_rate_constraints + Q.constraints(r)
 
     prob = solve_problem(cp.Maximize(cost), constraints)
 
@@ -146,7 +144,5 @@ def timesharing_network_dual(cost_function, la_m_t_s, network, q_min=None, q_max
         {m: {t: c.value for t, c in c_t.items()} for m, c_t in c_m_t.items()},
         [
             np.array([c.dual_value for c in user_rate_constraints]),
-            c2.dual_value,
-            c3.dual_value,
         ],
     )

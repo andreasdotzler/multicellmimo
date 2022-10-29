@@ -1,4 +1,92 @@
+def V_test(c_0, c_1, c_2, c_3):
+    f = cp.Variable(4, nonneg=True)
+    q_0 = cp.Variable(10, nonneg=True)
+    q_1 = cp.Variable(10, nonneg=True)
+    q_2 = cp.Variable(10, nonneg=True)
+    q_3 = cp.Variable(10, nonneg=True)
 
+    q = cp.sum([f[0] * c_0, f[1] * c_1, f[2] * c_2, f[3] * c_3])
+    prob = cp.Problem(cp.Maximize(proportional_fair(q)),[cp.sum(f) == 1])
+    prob.solve()
+    assert "optimal" in prob.status
+    util = sum(np.log(f[0].value*c_0 + f[1].value*c_1 + f[2].value*c_2 + f[3].value*c_3))
+    assert util == pytest.approx(prob.value, 1e-3) 
+    return q_0, q_1, q_2, q_3, q, prob, util
+
+
+def V_test_2(c_0, c_1, c_2, c_3, Q):
+    f = cp.Variable(2, nonneg=True)
+    q_a = cp.sum([f[0] * c_0, f[1] * c_1])
+    q_b = cp.sum([f[0] * c_2, f[1] * c_3])
+    cost = proportional_fair(q_a) + proportional_fair(q_b)
+    prob = cp.Problem(cp.Maximize(cost),[cp.sum(f) == 1] + Q.constraints(q_a) + Q.constraints(q_b))
+    prob.solve()
+    assert "optimal" in prob.status
+    util = sum(np.log(f[0].value * c_0 + f[1].value * c_1))
+    util += sum(np.log(f[0].value * c_2 + f[1].value * c_3))
+    return f, q_a, q_b, prob, util
+
+def test_V_novel_2():
+    n_user = 10
+    x_0 = np.random.random(n_user)
+    x_1 = np.random.random(n_user)
+    x_2 = np.random.random(n_user)
+    x_3 = np.random.random(n_user)
+
+    q_0 = cp.Variable(n_user, nonneg=True)
+    q_1 = cp.Variable(n_user, nonneg=True)
+    q_2 = cp.Variable(n_user, nonneg=True)
+    q_3 = cp.Variable(n_user, nonneg=True)
+
+    q_a = cp.sum([q_0, q_1])
+    q_b = cp.sum([q_2, q_3])
+    Q = Q_vector(np.zeros(10), np.ones(10)*3)
+
+    mm_a = cp.sum([x_0 @ q_0, x_1 @ q_1])
+    mm_b = cp.sum([x_2 @ q_2, x_3 @ q_3])
+    prob_a = cp.Problem(cp.Maximize(proportional_fair(q_a) - mm_a), Q.constraints(q_a))
+
+    prob_b = cp.Problem(cp.Maximize(proportional_fair(q_b) - mm_b), Q.constraints(q_b))
+    prob_a.solve()
+    prob_b.solve()
+    #val_conf = prob.value
+    c_0 = q_0.value
+    c_1 = q_1.value
+    c_2 = q_2.value
+    c_3 = q_3.value
+    la_1 = {"r1": x_0, "r2": x_1}
+    la_2 = {"r1": x_2, "r2": x_3}
+    la_m_t = {"r1": {"a": x_0, "b": x_2}, "r2": {"a": x_1, "b": x_3}}
+    modes = {"r1", "r2"}
+    T_1 = Transmitter({m: R_m_t(list(range( 0, 10)), I_C(None)) for m in modes}, "a")
+    T_2 = Transmitter({m: R_m_t(list(range(10, 20)), I_C(None)) for m in modes}, "b")
+    network = Network({T_1.id: T_1, T_2.id: T_2})
+    val, q_m_t, c_m_t = V_conj(network, proportional_fair, la_m_t, Q_vector(np.zeros(20), np.ones(20)*3))
+    prob_a_K, q_m_1 = K_conj(proportional_fair, Q, la_1)
+    prob_b_K, q_m_2 = K_conj(proportional_fair, Q, la_2)
+    assert prob_a.value == pytest.approx(prob_a_K, 1e-3)
+    assert prob_b.value == pytest.approx(prob_b_K, 1e-3)
+    assert val == pytest.approx(prob_a_K + prob_b_K, 1e-3)
+    assert q_m_t["r1"]["a"] == pytest.approx(q_m_1["r1"], 1e-3, abs=1e-3)
+    assert q_m_t["r1"]["b"] == pytest.approx(q_m_2["r1"], 1e-3, abs=1e-3)
+    assert q_m_t["r2"]["a"] == pytest.approx(q_m_1["r2"], 1e-3, abs=1e-3)
+    assert q_m_t["r2"]["b"] == pytest.approx(q_m_2["r2"], 1e-3, abs=1e-3)
+    assert q_m_t["r1"]["a"] == pytest.approx(c_0, 1e-3, abs=1e-3)
+    assert q_m_t["r1"]["b"] == pytest.approx(c_2, 1e-3, abs=1e-3)
+    assert q_m_t["r2"]["a"] == pytest.approx(c_1, 1e-3, abs=1e-3)
+    assert q_m_t["r2"]["b"] == pytest.approx(c_3, 1e-3, abs=1e-3)
+    s_1 = (x_0 @ c_0 + x_2 @ c_2)
+    s_2 = (x_1 @ c_1 + x_3 @ c_3) 
+    s = s_1 + s_2
+    f, q_a, q_b, prob, util = V_test_2(c_0 * s / s_1, c_1 * s / s_2, c_2 * s / s_1, c_3 * s / s_2, Q)
+
+    assert prob_a.value + prob_b.value + mm_a.value + mm_b.value == pytest.approx(util, 1e-3)
+    assert c_m_t["r1"]["a"] == pytest.approx(c_0 * s / s_1, 1e-3, abs=1e-3)
+    assert c_m_t["r1"]["b"] == pytest.approx(c_2 * s / s_1, 1e-3, abs=1e-3)
+    assert c_m_t["r2"]["a"] == pytest.approx(c_1 * s / s_2, 1e-3, abs=1e-3)
+    assert c_m_t["r2"]["b"] == pytest.approx(c_3 * s / s_1, 1e-3, abs=1e-3)
+    val, q_m_t, c_m_t = V_conj(network, proportional_fair, la_m_t, Q_vector(np.zeros(20), np.ones(20)*3))
+    
 def test_MACtoBCtransformation_with_noise():
     Ms_antennas = Bs_antennas = 3
     H = np.array([[1, 0, 0], [0, 2, 0], [0, 0, 3]])
