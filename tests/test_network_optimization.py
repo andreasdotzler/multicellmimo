@@ -58,4 +58,3 @@ def test_global_network(As, network: Network, algorithm, seed):
     opt_value_explicit, opt_q_explicit, _, _ = algorithm(proportional_fair, Q, network)
     assert opt_value_explicit == pytest.approx(value, 1e-2)
     assert opt_q_explicit == pytest.approx(rates, rel=1e-1, abs=1e-1)
-

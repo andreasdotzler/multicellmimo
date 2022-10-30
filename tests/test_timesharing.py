@@ -14,9 +14,13 @@ from mcm.network_optimization import (
     proportional_fair,
     weighted_sum_rate,
     wsr_for_A,
-    K_conj, 
+    K_conj,
 )
-from mcm.no_utils import InfeasibleOptimization, d_c_m_t_X_c_m_t, fractions_from_schedule
+from mcm.no_utils import (
+    InfeasibleOptimization,
+    d_c_m_t_X_c_m_t,
+    fractions_from_schedule,
+)
 from mcm.timesharing import (
     F_t_R_approx,
     time_sharing_cvx,
@@ -29,7 +33,6 @@ from mcm.network import Network
 from .utils import gen_test_network
 from mcm.my_typing import A_m_t
 from typing import Tuple
-
 
 
 @pytest.mark.parametrize("util", (proportional_fair, weighted_sum_rate(np.ones(10))))
@@ -120,6 +123,7 @@ def test_timesharing_fair(A):
     assert value == pytest.approx(opt_value, rel=1e-3, abs=1e-1)
     assert rates == pytest.approx(opt_q, rel=1e-3, abs=1e-1)
 
+
 def test_V():
     network, Q, d_c_m_t = network_and_random_duals()
     # todo verifiy utilities
@@ -129,6 +133,7 @@ def test_V():
     assert mm == pytest.approx(val - val_conj, 1e-3)
     val_conj_2, c_m_t_s_2 = V_conj(network, proportional_fair, d_c_m_t_2, Q)
     assert val_conj == pytest.approx(val_conj_2)
+
 
 def test_F_t_R_approx():
     As, network = gen_test_network()
@@ -172,7 +177,6 @@ def test_F_t_R_approx():
 
         # concave functions!
         sum(fractions[m] * l for m, l in la.items()) == pytest.approx(value_2 - value_d)
-   
 
 
 def network_and_random_duals() -> Tuple[Network, Q_vector, A_m_t]:
@@ -181,10 +185,10 @@ def network_and_random_duals() -> Tuple[Network, Q_vector, A_m_t]:
     q_max = np.array([20.0] * 30)
     Q = Q_vector(q_min=q_min, q_max=q_max)
     d_c_m_t = {
-            m: {t.id: np.random.random(len(t.users)) for t in ts_in_m}
-            for m, ts_in_m in network.t_m.items()
-        }
-        
+        m: {t.id: np.random.random(len(t.users)) for t in ts_in_m}
+        for m, ts_in_m in network.t_m.items()
+    }
+
     return network, Q, d_c_m_t
 
 
@@ -208,7 +212,10 @@ def test_fixed_f():
     f = fractions_from_schedule(network.alphas_m_t)
     c_m_t = {m: {t: 1 / f[m] * c for t, c in c_m.items()} for m, c_m in c_m_t.items()}
     d_c_m_t = {m: {t: d_c for t, d_c in d_c_m.items()} for m, d_c_m in d_c_m_t.items()}
-    xi = {t_id: {m: d_c_m_t[m][t_id] @ c_m_t[m][t_id] for m in t.modes} for t_id, t in network.transmitters.items()} 
+    xi = {
+        t_id: {m: d_c_m_t[m][t_id] @ c_m_t[m][t_id] for m in t.modes}
+        for t_id, t in network.transmitters.items()
+    }
     # V(c_m_t)
     V_c_m_t, V_q_m_t, V_f, V_d_c_m_t = V_new(network, proportional_fair, c_m_t, Q)
     # I(c_m_t)
@@ -223,7 +230,7 @@ def test_fixed_f():
     for t_id, t in network.transmitters.items():
         for m in t.modes:
             v, r = t.wsr(d_c_m_t[m][t_id], m)
-            v == pytest.approx(d_c_m_t[m][t_id]@c_m_t[m][t_id], 1e-3)
+            v == pytest.approx(d_c_m_t[m][t_id] @ c_m_t[m][t_id], 1e-3)
             I_conj_c_m_t += v
     assert V_conj_c_m_t + I_conj_c_m_t == pytest.approx(value, 1e-3)
 
@@ -231,14 +238,18 @@ def test_fixed_f():
     # sum_t F_t(f, R_approx)
     F, r, alphas, d_f, F_t_s = network.F_t_R_appprox(f, proportional_fair, Q)
     # I_f
-    assert sum(f.values()) == pytest.approx(1, 1e-3), f"fracrions do not sum to 1, found {f.values()} with sum {sum(f.values())}"
+    assert sum(f.values()) == pytest.approx(
+        1, 1e-3
+    ), f"fracrions do not sum to 1, found {f.values()} with sum {sum(f.values())}"
     assert value == pytest.approx(F, 1e-3)
 
     # sum_t F*(xi)
     val_d = 0
     for t_id, t in network.transmitters.items():
         R_m = {m: R.approx for m, R in t.R_m_t_s.items()}
-        (value_d, rates_d, f_d) = F_t_R_approx_conj(proportional_fair, xi[t_id], t.users, R_m, Q[t.users])
+        (value_d, rates_d, f_d) = F_t_R_approx_conj(
+            proportional_fair, xi[t_id], t.users, R_m, Q[t.users]
+        )
         val_d += value_d
     # I_F*(xi)
     xi_sum = {m: 0 for m in network.modes}

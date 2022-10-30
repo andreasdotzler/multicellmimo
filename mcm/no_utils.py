@@ -33,7 +33,9 @@ def fractions_from_schedule(alphas_m_t: x_m_t) -> Fractions:
         for alpha in alphas_t.values():
             sum_t_m.append(sum(alpha))
         mean_sum = np.mean(sum_t_m)
-        assert np.allclose(sum_t_m, np.ones_like(sum_t_m) * mean_sum, rtol=1e-02, atol=1e-02)
+        assert np.allclose(
+            sum_t_m, np.ones_like(sum_t_m) * mean_sum, rtol=1e-02, atol=1e-02
+        )
         fractions[mode] = mean_sum
         total_time += mean_sum
     return fractions

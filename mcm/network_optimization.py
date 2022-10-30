@@ -31,6 +31,7 @@ def I_C_Q(A, Q: Q_vector):
 def weighted_sum_rate(weights):
     def weighted_sum_rate(r):
         return weights @ r
+
     return weighted_sum_rate
 
 
@@ -66,7 +67,7 @@ def U_Q_conj(util, weights, Q):
 
 
 def dual_problem_app_f(util, weights_per_mode, f, Q):
-    #use K_conj(proportional_fair, Q[t.users], d_c_m, f = fractions)
+    # use K_conj(proportional_fair, Q[t.users], d_c_m, f = fractions)
     q = cp.Variable(len(Q))
     c_s = {m: cp.Variable(len(w), nonneg=True) for m, w in weights_per_mode.items()}
 
@@ -89,8 +90,9 @@ def dual_problem_app_f(util, weights_per_mode, f, Q):
         a = 1
     return prob_dual.value, q.value, {m: c.value for m, c in c_s.items()}
 
-def K_conj(util, Q, la_m, f = None) -> Tuple[float, dict[str, np.ndarray]]:
-    
+
+def K_conj(util, Q, la_m, f=None) -> Tuple[float, dict[str, np.ndarray]]:
+
     q_m = {m: cp.Variable(len(la), nonneg=True) for m, la in la_m.items()}
     if f:
         q_sum = cp.sum([q * f[m] for m, q in q_m.items()], axis=1)
@@ -101,6 +103,7 @@ def K_conj(util, Q, la_m, f = None) -> Tuple[float, dict[str, np.ndarray]]:
     prob = solve_problem(cp.Maximize(cost), Q.constraints(q_sum))
 
     return prob.value, {m: q.value for m, q in q_m.items()}
+
 
 def V(network, util, c_m_t, Q):
 
@@ -123,12 +126,12 @@ def V(network, util, c_m_t, Q):
 
 
 def V_new(network, util, c_m_t, Q):
-    
+
     f = {mode: cp.Variable(1, nonneg=True) for mode in network.modes}
     q_m_t = {m: {} for m in network.modes}
     con_m_t = {m: {} for m in network.modes}
     constraints = []
-    #c_m_t = {m: {} for m in network.modes}
+    # c_m_t = {m: {} for m in network.modes}
     q_t_sum = {}
     for t_id, t in network.transmitters.items():
         for m in t.modes:
@@ -152,13 +155,16 @@ def V_new(network, util, c_m_t, Q):
         prob.value,
         q,
         {mode: f_m.value for mode, f_m in f.items()},
-        {m: {t_id: con.dual_value for t_id, con in con_t.items()} for m, con_t in con_m_t.items()}
+        {
+            m: {t_id: con.dual_value for t_id, con in con_t.items()}
+            for m, con_t in con_m_t.items()
+        },
     )
 
 
 def V_conj(network, util, la_m_t, Q) -> Tuple[float, dict[str, dict[str, np.ndarray]]]:
 
-    #q = np.zeros(len(Q))
+    # q = np.zeros(len(Q))
     q_m_t = {m: {} for m in network.modes}
     v_opt = 0
     q_t = {}

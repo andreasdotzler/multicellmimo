@@ -35,7 +35,7 @@ class Network:
             m: {t.id: t.R_m_t_s[m].approx.r_in_A_x_alpha.dual_value for t in ts_in_m}
             for m, ts_in_m in self.t_m.items()
         }
-    
+
     @property
     def c_m_t(self):
         return {
