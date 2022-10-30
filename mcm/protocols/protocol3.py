@@ -15,7 +15,7 @@ def protocol3(util, Q: Q_vector, network: Network):
     max_util = -np.Inf
     for j in range(0, 100):
         # evaluate F(f)
-        v_n, r_n, alphas_n, d_f_t_m, F_t = network.scheduling(f_t, util, Q)
+        v_n, r_n, alphas_n, d_f_t_m, F_t = network.F_t_R_appprox(f_t, util, Q)
 
         # evalute approximation
         # project gradient
@@ -38,7 +38,7 @@ def protocol3(util, Q: Q_vector, network: Network):
             prob.solve()
             try:
                 f_temp = {m: f.value for m, f in f_t_new.items()}
-                network.scheduling(f_temp, util, Q)
+                network.F_t_R_appprox(f_temp, util, Q)
                 break
             except InfeasibleOptimization:
                 LOGGER.info(f"Infeasible for {f_temp}")

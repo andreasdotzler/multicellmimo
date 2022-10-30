@@ -1,3 +1,4 @@
+from locale import dcgettext
 import random
 
 import numpy as np
@@ -7,23 +8,20 @@ from mcm.network_optimization import (
     I_C,
     U_Q,
     U_Q_conj,
-    V,
     V_conj,
     V_new,
-    dual_problem_app_f,
     optimize_app_phy,
     proportional_fair,
     weighted_sum_rate,
     wsr_for_A,
     K_conj, 
 )
-from mcm.no_utils import InfeasibleOptimization
+from mcm.no_utils import InfeasibleOptimization, d_c_m_t_X_c_m_t, fractions_from_schedule
 from mcm.timesharing import (
     F_t_R_approx,
     time_sharing_cvx,
     F_t_R_approx_conj,
     timesharing_network,
-    timesharing_network_dual,
 )
 from mcm.regions import Q_vector, R_m_t_approx, R_m_t
 from mcm.transmitter import Transmitter
@@ -31,6 +29,7 @@ from mcm.network import Network
 from .utils import gen_test_network
 from mcm.my_typing import A_m_t
 from typing import Tuple
+
 
 
 @pytest.mark.parametrize("util", (proportional_fair, weighted_sum_rate(np.ones(10))))
@@ -121,6 +120,15 @@ def test_timesharing_fair(A):
     assert value == pytest.approx(opt_value, rel=1e-3, abs=1e-1)
     assert rates == pytest.approx(opt_q, rel=1e-3, abs=1e-1)
 
+def test_V():
+    network, Q, d_c_m_t = network_and_random_duals()
+    # todo verifiy utilities
+    val_conj, c_m_t_s = V_conj(network, proportional_fair, d_c_m_t, Q)
+    val, q_m_t, f, d_c_m_t_2 = V_new(network, proportional_fair, c_m_t_s, Q)
+    mm = d_c_m_t_X_c_m_t(d_c_m_t, c_m_t_s)
+    assert mm == pytest.approx(val - val_conj, 1e-3)
+    val_conj_2, c_m_t_s_2 = V_conj(network, proportional_fair, d_c_m_t_2, Q)
+    assert val_conj == pytest.approx(val_conj_2)
 
 def test_F_t_R_approx():
     As, network = gen_test_network()
@@ -164,23 +172,8 @@ def test_F_t_R_approx():
 
         # concave functions!
         sum(fractions[m] * l for m, l in la.items()) == pytest.approx(value_2 - value_d)
+   
 
-
-def test_V():
-    network, Q, d_c_m_t = network_and_random_duals()
-    # todo verifiy utilities 
-    val_conj, q_m_t, c_m_t_s = V_conj(network, proportional_fair, d_c_m_t, Q)
-    val, q_m_t, f, d_c_m_t = V_new(network, proportional_fair, c_m_t_s, Q)
-    mm = d_c_m_t_X_c_m_t(d_c_m_t, c_m_t_s)
-    assert mm == pytest.approx(val - val_conj, 1e-3)
-
-    
-def d_c_m_t_X_c_m_t(d_c_m_t, c_m_t_s):
-    mm = 0
-    for m, c_t in c_m_t_s.items():
-        for t, c in c_t.items():
-            mm += d_c_m_t[m][t] @ c
-    return mm
 
 def network_and_random_duals() -> Tuple[Network, Q_vector, A_m_t]:
     As, network = gen_test_network(20, np.random.random)
@@ -206,121 +199,50 @@ def test_fixed_f():
     # verfiy the dual variables
     d_c_m_t = network.d_c_m_t
     c_m_t = network.c_m_t
-    mm_p = d_c_m_t_X_c_m_t(d_c_m_t, c_m_t)
-    alphas_network = network.alphas_m_t
     (w_min, w_max) = Q.dual_values()
     assert 1 / rates + w_min - w_max - d_rates == pytest.approx(
         np.zeros(len(rates)), rel=1e-2, abs=1e-1
     )
-    fractions = {}
-    for mode, alphas_per_transmitter in alphas_network.items():
-        for alphas in alphas_per_transmitter.values():
-            fractions[mode] = sum(alphas)
-            break
 
+    # r, la is primal dual solution - V(c_m_t) - I(c_m_t) == V*(la_c_m_t) + I*(la_c_m_t)
+    f = fractions_from_schedule(network.alphas_m_t)
+    c_m_t = {m: {t: 1 / f[m] * c for t, c in c_m.items()} for m, c_m in c_m_t.items()}
+    d_c_m_t = {m: {t: d_c for t, d_c in d_c_m.items()} for m, d_c_m in d_c_m_t.items()}
+    xi = {t_id: {m: d_c_m_t[m][t_id] @ c_m_t[m][t_id] for m in t.modes} for t_id, t in network.transmitters.items()} 
+    # V(c_m_t)
+    V_c_m_t, V_q_m_t, V_f, V_d_c_m_t = V_new(network, proportional_fair, c_m_t, Q)
+    # I(c_m_t)
+    # we are using the approximation because we know it is complete
+    I_c_m_t = network.I_C_m_t_approx(c_m_t)
+    assert V_c_m_t - I_c_m_t == pytest.approx(value, 1e-3)
+
+    # V*(la_c_m_t)
+    V_conj_c_m_t, _ = V_conj(network, proportional_fair, d_c_m_t, Q)
+    # I*(la_c_m_t)
+    I_conj_c_m_t = 0
+    for t_id, t in network.transmitters.items():
+        for m in t.modes:
+            v, r = t.wsr(d_c_m_t[m][t_id], m)
+            v == pytest.approx(d_c_m_t[m][t_id]@c_m_t[m][t_id], 1e-3)
+            I_conj_c_m_t += v
+    assert V_conj_c_m_t + I_conj_c_m_t == pytest.approx(value, 1e-3)
+
+    # f, x_i is primal dual solution - sum_t F_t(f, R_approx) - I_F(f) == sum_t F_t*(xi) + I_F*(xi)
+    # sum_t F_t(f, R_approx)
+    F, r, alphas, d_f, F_t_s = network.F_t_R_appprox(f, proportional_fair, Q)
+    # I_f
+    assert sum(f.values()) == pytest.approx(1, 1e-3), f"fracrions do not sum to 1, found {f.values()} with sum {sum(f.values())}"
+    assert value == pytest.approx(F, 1e-3)
+
+    # sum_t F*(xi)
+    val_d = 0
     for t_id, t in network.transmitters.items():
         R_m = {m: R.approx for m, R in t.R_m_t_s.items()}
-
-        (
-            value_2,
-            rates_2,
-        ) = F_t_R_approx(proportional_fair, fractions, t.users, R_m, Q[t.users])
-
-        d_c_m_2 = {mode: R.r_in_A_x_alpha.dual_value for mode, R in R_m.items()}
-        for m, d_c_2 in d_c_m_2.items():
-            assert d_c_2 == pytest.approx(d_c_m_t[m][t_id] * fractions[m], 1e-3)
-
-
-    [dual_value, dual_rates, dual_c_m_t_s, _] = timesharing_network_dual(
-        proportional_fair, d_c_m_t, network, Q
-    )
-    val_k = 0
-    k_c_m_t_s = {}
-    for t_id, t in network.transmitters.items():
-        d_c_m = {m: d_c_m_t[m][t_id] for m in t.modes}
-        val, c_m = K_conj(proportional_fair, Q[t.users], d_c_m)
-        #for m in t.modes:
-            #assert k_c_m_t_s[m] == pytest.approx(dual_c_m_t_s[m][t_id], rel=1e-2, abs=1e-2)
-        val_k += val
-    assert val_k == pytest.approx(dual_value, 1e-3)
-
-
-    mm = 0
-    for m, c_t in dual_c_m_t_s.items():
-        for t, c in c_t.items():
-            mm += d_c_m_t[m][t] @ c
-
-    la_m = {}
-    c_m = {}
-    f_cal = {}
-    c_m_t_s = {m: {} for m in network.modes}
-    for mode, Am in As.items():
-        la_m[mode] = 0
-        c_m[mode] = np.zeros(len(rates))
-        for t, A in Am.items():
-            c_m_t_s[mode][t] = c_m_t = (
-                1 / sum(alphas_network[mode][t]) * A @ alphas_network[mode][t]
-            )
-            f_cal[mode] = sum(alphas_network[mode][t])
-            users = network.transmitters[t].users_per_mode[mode]
-            # c_m_t rescaled to 100% resources
-            if sum(alphas_network[mode][t]) >= 1e-3:
-                c_m[mode][users] += c_m_t
-
-            la_m[mode] += 1 / sum(alphas_network[mode][t]) * d_c_m_t[mode][t] @ c_m_t
-
-    Q = Q_vector(q_min=q_min, q_max=q_max)
-    val_conj, q_conj, _ = V_conj(network, proportional_fair, d_c_m_t, Q)
-    val, q, f = V(network, proportional_fair, c_m_t_s, Q)
-    val_2, q_2, f_2, d_c_m_t_2 = V_new(network, proportional_fair, c_m_t_s, Q)
-    mm = 0
-    for mode, d_c_t in d_c_m_t.items():
-        for t, d in d_c_t.items():
-            mm = d @ c_m_t_s[mode][t]
-    assert val_conj == pytest.approx(dual_value, 1e-3)
-    assert val - val_conj == pytest.approx(mm, 1e-3)
-    # for mode in la_m:
-    #    assert la_m[mode] == pytest.approx(sum(d_f_network[mode].values()), 1e-3)
-    #    assert la_m[mode] == pytest.approx(d_sum_f, 1e-3)
-    # max_r U(r) : r in R <-> min_la max_r U(r) : la(r - sum_m f_m c_m)
-    # la = 1/r -> la r = n_user -> sum_m fm la c_m = n_user
-    # d_f = [la c_1, ..., la c_M]
-    # eq:ver1_dual
-    # sum d_f = xi
-    # xi = max_m df
-    # d_f_m = la c_m is the same for all active modes!
-
-    # for mode, c in c_m.items():
-    #    assert d_rates @ c == pytest.approx(30, 1e-3)
-
-    # me = sum(la_m.values()) / len(la_m.values())
-    # for la in la_m.values():
-    # does this imply we already know the optimal dual parameters? n_users? -> optimal solution in one mode?
-    # assert la == pytest.approx(me, 1e-3)
-
-
-
-    # v_n, r_n, alphas_n, d_f_n, F_t = network.scheduling(
-    #    fractions, proportional_fair, q_min, q_max
-    # )
-    # assert v_n == pytest.approx(value, 1e-3)
-    # assert r_n == pytest.approx(rates, 1e-1)
-    # for t, d_f_t_n in d_f_n.items():
-    #    for mode, d in d_f_t_n.items():
-    #        assert d == pytest.approx(d_f_network[mode][t], 1e-2)
-    for t in network.transmitters.values():
-        (
-            F_t,
-            r_t,
-            alpha_t,
-            c_m,
-            [d_f_t_m, d_c_m, la],
-        ) = t.scheduling(fractions, proportional_fair, Q[t.users])
-
-        v_a, c = K_conj(proportional_fair, Q[t.users], d_c_m, f = fractions)
-
-        v_p = 0
-        for mode, As in t.As_per_mode.items():
-            w, r = wsr_for_A(d_c_m[mode], As)
-            v_p += w
-        assert F_t == pytest.approx(v_a + v_p, 1e-2)
+        (value_d, rates_d, f_d) = F_t_R_approx_conj(proportional_fair, xi[t_id], t.users, R_m, Q[t.users])
+        val_d += value_d
+    # I_F*(xi)
+    xi_sum = {m: 0 for m in network.modes}
+    for t, d_m in xi.items():
+        for m, d in d_m.items():
+            xi_sum[m] += d
+    assert value == pytest.approx(val_d + max(xi_sum.values()), 1e-3)

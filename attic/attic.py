@@ -1,17 +1,47 @@
-def V_test(c_0, c_1, c_2, c_3):
-    f = cp.Variable(4, nonneg=True)
-    q_0 = cp.Variable(10, nonneg=True)
-    q_1 = cp.Variable(10, nonneg=True)
-    q_2 = cp.Variable(10, nonneg=True)
-    q_3 = cp.Variable(10, nonneg=True)
 
-    q = cp.sum([f[0] * c_0, f[1] * c_1, f[2] * c_2, f[3] * c_3])
-    prob = cp.Problem(cp.Maximize(proportional_fair(q)),[cp.sum(f) == 1])
-    prob.solve()
-    assert "optimal" in prob.status
-    util = sum(np.log(f[0].value*c_0 + f[1].value*c_1 + f[2].value*c_2 + f[3].value*c_3))
-    assert util == pytest.approx(prob.value, 1e-3) 
-    return q_0, q_1, q_2, q_3, q, prob, util
+
+
+def timesharing_network_dual(cost_function, la_m_t_s, network, Q: Q_vector):
+
+    c_m_t = {m: {} for m in network.modes}
+
+    w_sum = 0
+    for t_id, transmitter in network.transmitters.items():
+        for mode, rates in transmitter.As_per_mode.items():
+            users = transmitter.users_per_mode[mode]
+            c_m_t[mode][t_id] = cp.Variable(len(users), nonneg=True)
+            w_sum += la_m_t_s[mode][t_id] @ c_m_t[mode][t_id]
+
+    r_constraints = {}
+
+    for t_id, transmitter in network.transmitters.items():
+        for mode in transmitter.modes:
+            users = transmitter.users_per_mode[mode]
+            for user_index, user in enumerate(users):
+                constraint = c_m_t[mode][t_id][user_index]
+                if user in r_constraints:
+                    r_constraints[user] += constraint
+                else:
+                    r_constraints[user] = constraint
+
+    n_users = len(r_constraints)
+    r = cp.Variable(n_users, nonneg=True)
+    user_rate_constraints = [r_k == r_constraints[user] for user, r_k in enumerate(r)]
+    cost = cost_function(r) - w_sum
+
+
+    constraints = user_rate_constraints + Q.constraints(r)
+
+    prob = solve_problem(cp.Maximize(cost), constraints)
+
+    return (
+        prob.value,
+        r.value,
+        {m: {t: c.value for t, c in c_t.items()} for m, c_t in c_m_t.items()},
+        [
+            np.array([c.dual_value for c in user_rate_constraints]),
+        ],
+    )
 
 
 def V_test_2(c_0, c_1, c_2, c_3, Q):
@@ -32,6 +62,10 @@ def test_V_novel_2():
     x_1 = np.random.random(n_user)
     x_2 = np.random.random(n_user)
     x_3 = np.random.random(n_user)
+    x_0 = np.array([1,1,1,1,1,1,1,0,0,0])
+    x_1 = np.array([1,1,1,1,1,1,0,0,0,0])
+    x_2 = np.array([0,0,0,0,0,0,0,1,1,1])
+    x_3 = np.array([0,0,0,0,0,0,1,1,1,1])
 
     q_0 = cp.Variable(n_user, nonneg=True)
     q_1 = cp.Variable(n_user, nonneg=True)
@@ -40,7 +74,7 @@ def test_V_novel_2():
 
     q_a = cp.sum([q_0, q_1])
     q_b = cp.sum([q_2, q_3])
-    Q = Q_vector(np.zeros(10), np.ones(10)*3)
+    Q = Q_vector(np.zeros(10), np.ones(10)*10)
 
     mm_a = cp.sum([x_0 @ q_0, x_1 @ q_1])
     mm_b = cp.sum([x_2 @ q_2, x_3 @ q_3])
@@ -61,12 +95,20 @@ def test_V_novel_2():
     T_1 = Transmitter({m: R_m_t(list(range( 0, 10)), I_C(None)) for m in modes}, "a")
     T_2 = Transmitter({m: R_m_t(list(range(10, 20)), I_C(None)) for m in modes}, "b")
     network = Network({T_1.id: T_1, T_2.id: T_2})
-    val, q_m_t, c_m_t = V_conj(network, proportional_fair, la_m_t, Q_vector(np.zeros(20), np.ones(20)*3))
+    s_1 = (x_0 @ c_0 + x_2 @ c_2)
+    s_2 = (x_1 @ c_1 + x_3 @ c_3)
+    s = s_1 + s_2
+    f, q_a, q_b, prob, util = V_test_2(c_0 * s / s_1, c_1 * s / s_2, c_2 * s / s_1, c_3 * s / s_2, Q)
+
+    val, q_m_t, c_m_t = V_conj(network, proportional_fair, la_m_t, Q_vector(np.zeros(20), np.ones(20) * 10))
     prob_a_K, q_m_1 = K_conj(proportional_fair, Q, la_1)
     prob_b_K, q_m_2 = K_conj(proportional_fair, Q, la_2)
     assert prob_a.value == pytest.approx(prob_a_K, 1e-3)
     assert prob_b.value == pytest.approx(prob_b_K, 1e-3)
+
     assert val == pytest.approx(prob_a_K + prob_b_K, 1e-3)
+
+
     assert q_m_t["r1"]["a"] == pytest.approx(q_m_1["r1"], 1e-3, abs=1e-3)
     assert q_m_t["r1"]["b"] == pytest.approx(q_m_2["r1"], 1e-3, abs=1e-3)
     assert q_m_t["r2"]["a"] == pytest.approx(q_m_1["r2"], 1e-3, abs=1e-3)
@@ -75,17 +117,34 @@ def test_V_novel_2():
     assert q_m_t["r1"]["b"] == pytest.approx(c_2, 1e-3, abs=1e-3)
     assert q_m_t["r2"]["a"] == pytest.approx(c_1, 1e-3, abs=1e-3)
     assert q_m_t["r2"]["b"] == pytest.approx(c_3, 1e-3, abs=1e-3)
-    s_1 = (x_0 @ c_0 + x_2 @ c_2)
-    s_2 = (x_1 @ c_1 + x_3 @ c_3) 
-    s = s_1 + s_2
-    f, q_a, q_b, prob, util = V_test_2(c_0 * s / s_1, c_1 * s / s_2, c_2 * s / s_1, c_3 * s / s_2, Q)
+
+
 
     assert prob_a.value + prob_b.value + mm_a.value + mm_b.value == pytest.approx(util, 1e-3)
     assert c_m_t["r1"]["a"] == pytest.approx(c_0 * s / s_1, 1e-3, abs=1e-3)
     assert c_m_t["r1"]["b"] == pytest.approx(c_2 * s / s_1, 1e-3, abs=1e-3)
     assert c_m_t["r2"]["a"] == pytest.approx(c_1 * s / s_2, 1e-3, abs=1e-3)
-    assert c_m_t["r2"]["b"] == pytest.approx(c_3 * s / s_1, 1e-3, abs=1e-3)
+    assert c_m_t["r2"]["b"] == pytest.approx(c_3 * s / s_2, 1e-3, abs=1e-3)
     val, q_m_t, c_m_t = V_conj(network, proportional_fair, la_m_t, Q_vector(np.zeros(20), np.ones(20)*3))
+
+
+def V_test(c_0, c_1, c_2, c_3):
+    f = cp.Variable(4, nonneg=True)
+    q_0 = cp.Variable(10, nonneg=True)
+    q_1 = cp.Variable(10, nonneg=True)
+    q_2 = cp.Variable(10, nonneg=True)
+    q_3 = cp.Variable(10, nonneg=True)
+
+    q = cp.sum([f[0] * c_0, f[1] * c_1, f[2] * c_2, f[3] * c_3])
+    prob = cp.Problem(cp.Maximize(proportional_fair(q)),[cp.sum(f) == 1])
+    prob.solve()
+    assert "optimal" in prob.status
+    util = sum(np.log(f[0].value*c_0 + f[1].value*c_1 + f[2].value*c_2 + f[3].value*c_3))
+    assert util == pytest.approx(prob.value, 1e-3) 
+    return q_0, q_1, q_2, q_3, q, prob, util
+
+
+
     
 def test_MACtoBCtransformation_with_noise():
     Ms_antennas = Bs_antennas = 3

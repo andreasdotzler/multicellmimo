@@ -17,6 +17,7 @@ from mcm.timesharing import timesharing_network
 from mcm.network_optimization import proportional_fair
 from mcm.regions import Q_vector
 from mcm.network import Network
+from mcm.no_utils import fractions_from_schedule
 
 LOGGER = logging.getLogger(__name__)
 
@@ -46,7 +47,8 @@ def test_global_network(As, network: Network, algorithm, seed):
 
     assert all(rates >= q_min * 0.97)
     assert all(rates * 0.97 <= q_max)
-    verfiy_fractional_schedule(network.alphas_m_t)
+    f = fractions_from_schedule(network.alphas_m_t)
+    assert sum(f.values()) == pytest.approx(1, 1e-3)
     LOGGER.info(f"expected result: {value}")
     network.reset_approximation()
     # scheduling works on the approximations, let us assume here the approximation
@@ -57,17 +59,3 @@ def test_global_network(As, network: Network, algorithm, seed):
     assert opt_value_explicit == pytest.approx(value, 1e-2)
     assert opt_q_explicit == pytest.approx(rates, rel=1e-1, abs=1e-1)
 
-
-def verfiy_fractional_schedule(alphas):
-    total_time = 0
-    for mode, alphas_per_mode in alphas.items():
-        sum_per_transmitter_and_mode = []
-        for alpha in alphas_per_mode.values():
-            sum_per_transmitter_and_mode.append(sum(alpha))
-        mean_sum = np.mean(sum_per_transmitter_and_mode)
-        LOGGER.info(f"Mode {mode} - Fraction {mean_sum}")
-        assert sum_per_transmitter_and_mode == pytest.approx(
-            np.ones(len(sum_per_transmitter_and_mode)) * mean_sum, rel=1e-2, abs=1e-2
-        )
-        total_time += mean_sum
-    assert total_time == pytest.approx(1, 1e-2)

@@ -32,7 +32,7 @@ def protocol6(util, Q: Q_vector, network: Network):
 
                 for l in range(100):
                     # Solve approximated problem
-                    F_t, r_t, alpha_t, c_m, [d_f_t_m, d_c_m, la] = t.scheduling(
+                    F_t, r_t, alpha_t, c_m, [d_f_t_m, d_c_m, la] = t.F_t_R_approx(
                         f_t, util, Q[t.users]
                     )
                     # solve the dual problem to provide bound and update

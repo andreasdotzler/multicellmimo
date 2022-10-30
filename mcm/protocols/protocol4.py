@@ -20,7 +20,7 @@ def protocol4(util, Q: Q_vector, network: Network):
         # evaluate F(f)
         for n in range(0, 100):
             try:
-                v_n, r_n, alphas_n, d_f_n, F_t = network.scheduling(f_t[j], util, Q)
+                v_n, r_n, alphas_n, d_f_n, F_t = network.F_t_R_appprox(f_t[j], util, Q)
                 break
             except InfeasibleOptimization:
                 # we hit an infeasible resource allocation,

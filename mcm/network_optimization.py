@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 import logging
 from typing import Optional, Tuple
 
@@ -7,7 +8,7 @@ import numpy as np
 
 from mcm.timesharing import time_sharing_cvx
 from mcm.regions import Q_vector, R_m_t_approx
-from mcm.no_utils import solve_problem
+from mcm.no_utils import solve_problem, d_c_m_t_X_c_m_t
 
 LOGGER = logging.getLogger(__name__)
 
@@ -138,7 +139,7 @@ def V_new(network, util, c_m_t, Q):
 
     constraints.append(cp.sum(list(f.values())) == 1)
     for t_id, t in network.transmitters.items():
-        constraints+= Q[t.users].constraints(q_t_sum[t_id])
+        constraints += Q[t.users].constraints(q_t_sum[t_id])
     util = cp.sum([util(q_t) for q_t in q_t_sum.values()])
     prob = cp.Problem(cp.Maximize(util), constraints)
     prob.solve()
@@ -151,11 +152,8 @@ def V_new(network, util, c_m_t, Q):
         prob.value,
         q,
         {mode: f_m.value for mode, f_m in f.items()},
-        {m: {t_id: f[m].value * con.dual_value for t_id, con in con_t.items()} for m, con_t in con_m_t.items()}
+        {m: {t_id: con.dual_value for t_id, con in con_t.items()} for m, con_t in con_m_t.items()}
     )
-
-
-
 
 
 def V_conj(network, util, la_m_t, Q) -> Tuple[float, dict[str, dict[str, np.ndarray]]]:
@@ -179,9 +177,15 @@ def V_conj(network, util, la_m_t, Q) -> Tuple[float, dict[str, dict[str, np.ndar
     for m, q_t in q_m_t.items():
         c_m_t[m] = {}
         for t, q in q_t.items():
-            c_m_t[m][t] = q * d_sum / s[m]
+            if s[m] > 0:
+                c_m_t[m][t] = q * d_sum / s[m]
+            else:
+                c_m_t[m][t] = q * 0
 
-    return v_opt, q_m_t, c_m_t
+    v_opt_p, _, _, _ = V_new(network, proportional_fair, c_m_t, Q)
+    mm = d_c_m_t_X_c_m_t(la_m_t, c_m_t)
+
+    return v_opt_p - mm, c_m_t
 
 
 def optimize_app_phy(util, Q: Q_vector, wsr_phy):

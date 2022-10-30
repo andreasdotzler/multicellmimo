@@ -1,7 +1,7 @@
 """COPYRIGTH."""
 import numpy as np
 
-from .my_typing import Matrix
+from mcm.my_typing import Matrix
 from typing import List
 
 

@@ -3,7 +3,7 @@ import numpy as np
 
 from typing import Optional, Tuple, Any, Dict
 from mcm.transmitter import Transmitter
-from mcm.my_typing import A_m_t, Fractions, V_m_t, Weights
+from mcm.my_typing import A_m_t, Fractions, V_m_t, Weights, x_m_t
 from mcm.regions import Q_vector
 
 
@@ -42,6 +42,13 @@ class Network:
             m: {t.id: t.R_m_t_s[m].approx.c.value for t in ts_in_m}
             for m, ts_in_m in self.t_m.items()
         }
+
+    def I_C_m_t_approx(self, c_m_t: x_m_t):
+        for t_id, t in self.transmitters.items():
+            for m in t.modes:
+                if c_m_t[m][t_id] not in t.R_m_t_s[m].approx:
+                    return np.Inf
+        return 0
 
     def initialize_approximation(self, As: A_m_t) -> None:
         for mode, trans_and_At in As.items():
@@ -86,7 +93,7 @@ class Network:
                 A_max[mode][transmitter_id] = rates
         return values, A_max
 
-    def scheduling(
+    def F_t_R_appprox(
         self, fractions: Fractions, util: Any, Q: Q_vector
     ) -> Tuple[float, np.ndarray, V_m_t, dict[int, dict[str, float]], dict[int, float]]:
         F = 0
@@ -101,7 +108,7 @@ class Network:
                 alpha_t,
                 c_m,
                 [d_f_t_m, d_c_m, la],
-            ) = t.scheduling(fractions, util, Q[t.users])
+            ) = t.F_t_R_approx(fractions, util, Q[t.users])
             for mode, a in alpha_t.items():
                 if mode not in alphas:
                     alphas[mode] = {}

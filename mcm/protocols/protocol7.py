@@ -26,7 +26,7 @@ def protocol7(util, Q: Q_vector, network: Network):
                 r = np.zeros(len(network.users))
                 d_f = {}
                 for t_id, t in network.transmitters.items():
-                    F_t, r_t, alpha_t, c_m, [d_f_t_m, la_m_t, la] = t.scheduling(f_t, util, Q.q_min[t.users], Q.q_max[t.users])
+                    F_t, r_t, alpha_t, c_m, [d_f_t_m, la_m_t, la] = t.F_t_R_approx(f_t, util, Q.q_min[t.users], Q.q_max[t.users])
                     d_f[t_id] = {m: la @ c for m,c in c_m.items()}
                     F += F_t
                     F_t_s_i[t_id] = F_t

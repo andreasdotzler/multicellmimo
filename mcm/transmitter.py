@@ -90,7 +90,7 @@ class Transmitter:
 
         return primal_value, v_app + v_phy
 
-    def scheduling(self, fractions, util, Q: Q_vector):
+    def F_t_R_approx(self, fractions, util, Q: Q_vector):
         self.f_t = fractions
         R_m = {m: R.approx for m, R in self.R_m_t_s.items()}
         (F_t, r_t) = F_t_R_approx(util, fractions, self.users, R_m, Q)
