@@ -26,11 +26,11 @@
 					"--rcfile=pylintrc"
 				],
 				"python.linting.pylintUseMinimalCheckers": false,
-				//"python.linting.mypyEnabled": true,
-				//"python.linting.mypyArgs": [
-				//	"--config-file=setup.cfg",
-				//	"--cache-dir=/pylintcache/.vscode"
-				//],
+				"python.linting.mypyEnabled": true,
+				"python.linting.mypyArgs": [
+					"--config-file=setup.cfg",
+					"--cache-dir=/pylintcache/.vscode"
+				],
 				"python.formatting.provider": "black",
 				"python.linting.flake8Enabled": true,
 				"python.linting.flake8Args": [

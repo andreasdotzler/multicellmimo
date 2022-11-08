@@ -1,8 +1,4 @@
-from locale import dcgettext
-import random
-
 import numpy as np
-import cvxpy as cp
 import pytest
 from mcm.network_optimization import (
     I_C,
@@ -14,7 +10,6 @@ from mcm.network_optimization import (
     proportional_fair,
     weighted_sum_rate,
     wsr_for_A,
-    K_conj,
 )
 from mcm.no_utils import (
     InfeasibleOptimization,
@@ -27,8 +22,7 @@ from mcm.timesharing import (
     F_t_R_approx_conj,
     timesharing_network,
 )
-from mcm.regions import Q_vector, R_m_t_approx, R_m_t
-from mcm.transmitter import Transmitter
+from mcm.regions import Q_vector, R_m_t_approx
 from mcm.network import Network
 from .utils import gen_test_network
 from mcm.my_typing import A_m_t
@@ -45,7 +39,7 @@ def test_U_Q(util) -> None:
     assert la @ q == pytest.approx(val - val_conj)
 
 
-def test_timesharing_wsr():
+def test_timesharing_wsr() -> None:
     A = np.array([[4, 1], [1, 2]])
     q_min = np.array([0, 0])
     q_max = np.array([10, 10])
@@ -53,15 +47,15 @@ def test_timesharing_wsr():
     n_users, n = A.shape
     R = R_m_t_approx(list(range(0, n_users)), A)
 
-    weights = [1, 0]
+    weights = np.array([1, 0])
     _, rates = time_sharing_cvx(weighted_sum_rate(weights), R, Q)
     assert rates.tolist() == pytest.approx([4, 1], 1e-3)
 
-    weights = [0, 1]
+    weights = np.array([0, 1])
     _, rates = time_sharing_cvx(weighted_sum_rate(weights), R, Q)
     assert rates.tolist() == pytest.approx([1, 2], 1e-3)
 
-    weights = [1, 1]
+    weights = np.array([1, 1])
     _, rates = time_sharing_cvx(weighted_sum_rate(weights), R, Q)
     assert rates.tolist() == pytest.approx([4, 1], 1e-3)
 
@@ -80,7 +74,7 @@ def test_timesharing_wsr():
         _, rates = time_sharing_cvx(weighted_sum_rate(weights), R, Q)
 
 
-def test_timesharing_fair(A):
+def test_timesharing_fair(A) -> None:
 
     n_users = A.shape[0]
     q_min = np.array([0.1] * n_users)
@@ -124,7 +118,7 @@ def test_timesharing_fair(A):
     assert rates == pytest.approx(opt_q, rel=1e-3, abs=1e-1)
 
 
-def test_V():
+def test_V() -> None:
     network, Q, d_c_m_t = network_and_random_duals()
     # todo verifiy utilities
     val_conj, c_m_t_s = V_conj(network, proportional_fair, d_c_m_t, Q)
@@ -153,9 +147,9 @@ def test_F_t_R_approx():
             rates_2,
         ) = F_t_R_approx(proportional_fair, fractions, t.users, R_m, Q[t.users])
 
-        schedules_2 = {mode: R.alphas.value for mode, R in R_m.items()}
+        # schedules_2 = {mode: R.alphas.value for mode, R in R_m.items()}
         c_m_2 = {mode: R.c.value for mode, R in R_m.items()}
-        d_sum_f_2 = {mode: R.sum_alpha.dual_value for mode, R in R_m.items()}
+        # d_sum_f_2 = {mode: R.sum_alpha.dual_value for mode, R in R_m.items()}
         d_c_m_2 = {mode: R.r_in_A_x_alpha.dual_value for mode, R in R_m.items()}
 
         q_2 = np.zeros(len(t.users))

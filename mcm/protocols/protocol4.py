@@ -9,7 +9,7 @@ LOGGER = logging.getLogger(__name__)
 
 
 def protocol4(util, Q: Q_vector, network: Network):
-    modes = network.modes
+
     # sum(mu_t) : mu_t <= F_t(f_t_i) - xi_t_i(f - f_t_i) \forall t \forall i, f \in F
     f_equal = 1 / len(network.modes)
     f_t = [{m: f_equal for m in network.modes}]

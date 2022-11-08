@@ -1,10 +1,11 @@
 import cvxpy as cp
 import numpy as np
 
-from typing import Optional, Tuple, Any, Dict
+from typing import Optional, Tuple, Any, Dict, List, Set
 from mcm.transmitter import Transmitter
-from mcm.my_typing import A_m_t, Fractions, V_m_t, Weights, x_m_t
+from mcm.my_typing import A_m_t, Fractions, Weights, x_m_t
 from mcm.regions import Q_vector
+from mcm.no_utils import solve_problem
 
 
 class Network:
@@ -18,32 +19,32 @@ class Network:
             self.modes += t.modes
         self.users = list(set(self.users))
         self.modes = list(set(self.modes))
-        self.t_m = {}
+        self.t_m: dict[str, Set[Transmitter]] = {}
         for mode in self.modes:
             self.t_m[mode] = {t for t in transmitters.values() if mode in t.modes}
 
     @property
-    def alphas_m_t(self):
+    def alphas_m_t(self) -> dict[str, dict[int, Any]]:
         return {
             m: {t.id: t.R_m_t_s[m].approx.alphas.value for t in ts_in_m}
             for m, ts_in_m in self.t_m.items()
         }
 
     @property
-    def d_c_m_t(self):
+    def d_c_m_t(self) -> x_m_t:
         return {
             m: {t.id: t.R_m_t_s[m].approx.r_in_A_x_alpha.dual_value for t in ts_in_m}
             for m, ts_in_m in self.t_m.items()
         }
 
     @property
-    def c_m_t(self):
+    def c_m_t(self) -> x_m_t:
         return {
             m: {t.id: t.R_m_t_s[m].approx.c.value for t in ts_in_m}
             for m, ts_in_m in self.t_m.items()
         }
 
-    def I_C_m_t_approx(self, c_m_t: x_m_t):
+    def I_C_m_t_approx(self, c_m_t: x_m_t) -> float:
         for t_id, t in self.transmitters.items():
             for m in t.modes:
                 if c_m_t[m][t_id] not in t.R_m_t_s[m].approx:
@@ -59,7 +60,7 @@ class Network:
         for t in self.transmitters.values():
             t.reset_approximations()
 
-    def wsr_per_mode(self, weights: Weights) -> Tuple[int, np.ndarray]:
+    def wsr_per_mode(self, weights: Weights) -> Tuple[float, np.ndarray]:
         max_value = -np.Inf
         mode_values, A_m = self.wsr_per_mode_and_transmitter(weights)
         w_m = {m: sum(w_m_t.values()) for m, w_m_t in mode_values.items()}
@@ -72,8 +73,8 @@ class Network:
 
     def wsr_per_mode_and_transmitter(
         self, weights: Optional[Weights] = None
-    ) -> Tuple[V_m_t, A_m_t]:
-        values: V_m_t = {}
+    ) -> Tuple[x_m_t, A_m_t]:
+        values: x_m_t = {}
         A_max: A_m_t = {}
 
         test: Dict[int, str] = {}
@@ -95,11 +96,11 @@ class Network:
 
     def F_t_R_appprox(
         self, fractions: Fractions, util: Any, Q: Q_vector
-    ) -> Tuple[float, np.ndarray, V_m_t, dict[int, dict[str, float]], dict[int, float]]:
-        F = 0
+    ) -> Tuple[float, np.ndarray, x_m_t, dict[int, dict[str, np.ndarray]], dict[int, float]]:
+        F = 0.0
         F_t_s = {}
         r = np.zeros(len(self.users))
-        alphas = {}
+        alphas: x_m_t = {}
         d_f = {}
         for transmitter_id, t in self.transmitters.items():
             (
@@ -123,7 +124,7 @@ class Network:
                 r[user] += rate
         return F, r, alphas, d_f, F_t_s
 
-    def create_init_mode(self, q_min) -> None:
+    def create_init_mode(self, q_min: np.ndarray) -> None:
         # we need to initialize a fake mode that is all q_min
         for transmitter in self.transmitters.values():
             # unique_users = list(set(transmitter.users))
@@ -132,7 +133,7 @@ class Network:
                 At = a.reshape(len(a), 1)
                 transmitter.set_approximation(mode, At)
 
-    def resource_allocation(self, f_t, d_f_n_s, F_t_s) -> Tuple[int, float]:
+    def resource_allocation(self, f_t: List[Fractions], d_f_n_s: List[dict[int, dict[str, float]]], F_t_s: List[dict[int, float]]) -> Tuple[float, Fractions]:
         i = len(f_t) - 1
         mu = {}
         t_cons = []
@@ -151,8 +152,6 @@ class Network:
                     )
                 )
         sum_con = [cp.sum(list(f.values())) == 1]
-        prob = cp.Problem(cp.Maximize(cp.sum(list(mu.values()))), sum_con + t_cons)
-        prob.solve()
-        assert prob.status == "optimal"
+        prob = solve_problem(cp.Maximize(cp.sum(list(mu.values()))), sum_con + t_cons)
         f_new = {m: ff.value[0] for m, ff in f.items()}
         return prob.value, f_new

@@ -1,6 +1,8 @@
 import cvxpy as cp
 import numpy as np
 
+from typing import List, Union
+
 from mcm.my_typing import x_m_t, Fractions
 
 
@@ -8,17 +10,17 @@ class InfeasibleOptimization(Exception):
     pass
 
 
-def solve_problem(util, cons):
+def solve_problem(util: Union[cp.Maximize, cp.Minimize], cons: List[cp.constraints.constraint.Constraint]) -> cp.Problem:
     prob = cp.Problem(util, cons)
-    prob.solve()
+    prob.solve()  # type: ignore
     if "infeasible" in prob.status:
         raise InfeasibleOptimization()
     assert "optimal" in prob.status, f"unable to solve problem: {prob.status}"
     return prob
 
 
-def d_c_m_t_X_c_m_t(d_c_m_t: x_m_t, c_m_t_s: x_m_t) -> np.ndarray:
-    mm = 0
+def d_c_m_t_X_c_m_t(d_c_m_t: x_m_t, c_m_t_s: x_m_t) -> float:
+    mm = 0.0
     for m, c_t in c_m_t_s.items():
         for t, c in c_t.items():
             mm += d_c_m_t[m][t] @ c
@@ -27,7 +29,7 @@ def d_c_m_t_X_c_m_t(d_c_m_t: x_m_t, c_m_t_s: x_m_t) -> np.ndarray:
 
 def fractions_from_schedule(alphas_m_t: x_m_t) -> Fractions:
     fractions = {}
-    total_time = 0
+    total_time = 0.0
     for mode, alphas_t in alphas_m_t.items():
         sum_t_m = []
         for alpha in alphas_t.values():
