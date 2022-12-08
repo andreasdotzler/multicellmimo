@@ -1,5 +1,5 @@
 import logging
-from typing import Callable, Tuple, Optional
+from typing import Callable, Tuple, Optional, Union
 
 
 import cvxpy as cp
@@ -33,30 +33,30 @@ def I_C_Q(A: Matrix, Q: Q_vector) -> WSR:
     return I_C_Q
 
 
-def weighted_sum_rate(weights: np.ndarray) -> Util:
-    def weighted_sum_rate(r: np.ndarray) -> np.number:
-        return np.inner(weights, r)
+def weighted_sum_rate(weights: np.ndarray) -> Callable[[np.ndarray], Union[float, np.number]]:
+    def weighted_sum_rate(r: np.ndarray) -> float:
+        return float(np.inner(weights, r))
 
     return weighted_sum_rate
 
 
 def proportional_fair(r: np.ndarray) -> cp.Expression:
-    return cp.sum(cp.log(r))
+    return cp.sum(cp.log(r))  # type: ignore
 
 
 def app_layer(weights: Weights) -> cp.Expression:
     def app_layer(r: np.ndarray) -> cp.Expression:
-        return cp.atoms.affine.sum.Sum(cp.atoms.elementwise.log.log(r)) - weights @ r
+        return cp.atoms.affine.sum.Sum(cp.atoms.elementwise.log.log(r)) - weights @ r  # type: ignore
 
     return app_layer
 
 
-def U_Q(util: cp.Expression, q: np.ndarray, Q: Q_vector) -> np.ndarray:
+def U_Q(util: Util, q: np.ndarray, Q: Q_vector) -> np.ndarray:
     # U(q)
     if q not in Q:
         return -np.Inf
     else:
-        return util(cp.Variable(len(q), value=q)).value
+        return util(q)
 
 
 def U_Q_conj(util: Util, weights: Weights, Q: Q_vector) -> Tuple[np.ndarray, np.ndarray]:
@@ -87,7 +87,7 @@ def dual_problem_app_f(util: Util, weights_per_mode: dict[str, Weights], f: Frac
     if Q.q_min is not None:
         constraints_dual.append(q >= Q.q_min)
     prob_dual = cp.Problem(cp.Maximize(cost_dual), constraints_dual)
-    prob_dual.solve()
+    prob_dual.solve()  # type: ignore
     return prob_dual.value, q.value, {m: c.value for m, c in c_s.items()}
 
 

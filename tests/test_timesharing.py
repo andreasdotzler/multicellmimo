@@ -25,12 +25,12 @@ from mcm.timesharing import (
 from mcm.regions import Q_vector, R_m_t_approx
 from mcm.network import Network
 from .utils import gen_test_network
-from mcm.my_typing import A_m_t
+from mcm.my_typing import A_m_t, Util
 from typing import Tuple
 
 
 @pytest.mark.parametrize("util", (proportional_fair, weighted_sum_rate(np.ones(10))))
-def test_U_Q(util) -> None:
+def test_U_Q(util: Util) -> None:
 
     Q = Q_vector(q_min=np.zeros(10), q_max=np.ones(10))
     la = np.random.random(10)
@@ -74,7 +74,7 @@ def test_timesharing_wsr() -> None:
         _, rates = time_sharing_cvx(weighted_sum_rate(weights), R, Q)
 
 
-def test_timesharing_fair(A) -> None:
+def test_timesharing_fair(A: Matrix) -> None:
 
     n_users = A.shape[0]
     q_min = np.array([0.1] * n_users)

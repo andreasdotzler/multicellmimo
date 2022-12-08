@@ -65,7 +65,7 @@ class R_m_t_approx:
         # TODO should we minimize distance?
         alphas = cp.Variable(self.A.shape[1], nonneg=True)
         solve_problem(cp.Minimize(cp.sum(alphas)), [q == self.A @ alphas])
-        return sum(alphas.value) <= (1 + self.in_tol)
+        return float(sum(alphas.value)) <= (1.0 + self.in_tol)
 
 
 class Q_vector(Sized):
@@ -96,18 +96,24 @@ class Q_vector(Sized):
         )
 
     def __getitem__(self, users: List[int]) -> Q_vector:
-        q_min: np.ndarray = self.q_min[users]
-        q_max: np.ndarray = self.q_max[users]
+        if self.q_min is not None:
+            q_min = self.q_min[users]
+        else:
+            q_min = None
+        if self.q_max is not None:
+            q_max = self.q_max[users]
+        else:
+            q_max = None
         return Q_vector(q_min=q_min, q_max=q_max)
 
-    def con_min(self, q: Optional[np.ndarray]) -> Optional[cp.constraints.constraint.Constraint]:
+    def con_min(self, q: cp.Variable) -> Optional[cp.constraints.constraint.Constraint]:
         if self.q_min is not None:
             self.q_geq_qmin = q >= self.q_min
             return self.q_geq_qmin
         else:
             return None
 
-    def con_max(self, q: Optional[np.ndarray]) -> Optional[cp.constraints.constraint.Constraint]:
+    def con_max(self, q: cp.Variable) -> Optional[cp.constraints.constraint.Constraint]:
         if self.q_max is not None:
             self.q_leq_qmax = q <= self.q_max
             return self.q_leq_qmax
@@ -120,7 +126,7 @@ class Q_vector(Sized):
         if min_con is not None:
             cons.append(min_con)
         max_con = self.con_max(q)
-        if min_con is not None:
+        if max_con is not None:
             cons.append(max_con)
         return cons
 

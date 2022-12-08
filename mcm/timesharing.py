@@ -6,7 +6,7 @@ from typing import Tuple, List
 
 from mcm.no_utils import InfeasibleOptimization, solve_problem
 from mcm.regions import Q_vector, R_m_t_approx
-from mcm.my_typing import Fractions, R_m, Util
+from mcm.my_typing import Fractions, R_m, Util, x_m_t
 from mcm.network import Network
 
 LOGGER = logging.getLogger(__name__)
@@ -76,8 +76,8 @@ def timesharing_network(cost_function: Util, network: Network, Q: Q_vector) -> T
     f = {m: cp.Variable(1, nonneg=True) for m in network.modes}
     n_users = len(network.users)
     r = cp.Variable(n_users, nonneg=True)
-    transmitters = network.transmitters.values()
-    c_t_m = {t: {} for t in transmitters}
+    transmitters = network.transmitters
+    c_t_m: x_m_t = {t: {} for t in transmitters}
 
     cons = []
     for t in transmitters:
