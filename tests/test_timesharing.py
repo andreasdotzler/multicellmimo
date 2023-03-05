@@ -25,12 +25,12 @@ from mcm.timesharing import (
 from mcm.regions import Q_vector, R_m_t_approx
 from mcm.network import Network
 from .utils import gen_test_network
-from mcm.my_typing import A_m_t, Util
+from mcm.my_typing import A_m_t, Util_cvx
 from typing import Tuple
 
 
 @pytest.mark.parametrize("util", (proportional_fair, weighted_sum_rate(np.ones(10))))
-def test_U_Q(util: Util) -> None:
+def test_U_Q(util: Util_cvx) -> None:
 
     Q = Q_vector(q_min=np.zeros(10), q_max=np.ones(10))
     la = np.random.random(10)

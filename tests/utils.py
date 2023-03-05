@@ -1,11 +1,14 @@
 import numpy as np
+
+from typing import Callable, Tuple
+from mcm.my_typing import Weights
 from mcm.network_optimization import I_C
 from mcm.network import Network
 from mcm.transmitter import Transmitter
 from mcm.regions import R_m_t
 
 
-def gen_test_network(n_rate_points_per_mode_and_transmitter=1, sample_function=np.ones):
+def gen_test_network(n_rate_points_per_mode_and_transmitter: int = 1, sample_function: Callable[[Tuple[int, int]], np.ndarray] = np.ones) -> Tuple[dict[str, dict[int, np.ndarray]], Network]:
     users_per_mode_and_transmitter = {
         "reuse1": {
             0: list(range(0, 10)),
@@ -16,16 +19,11 @@ def gen_test_network(n_rate_points_per_mode_and_transmitter=1, sample_function=n
         "reuse3-1": {1: list(range(10, 20))},
         "reuse3-2": {2: list(range(20, 30))},
     }
-    users_per_transmitter = {
-        0: list(range(0, 10)),
-        1: list(range(10, 20)),
-        2: list(range(20, 30)),
-    }
 
-    As = {}
+    As: dict[str, dict[int, np.ndarray]] = {}
     transmitters = {}
-    wsr_transmitter_mode = {}
-    users_transmitter_mode = {}
+    wsr_transmitter_mode: dict[int, dict[str, Callable[[Weights], Tuple[float, np.ndarray]]]] = {}
+    users_transmitter_mode: dict[int, dict[str, list[int]]] = {}
     for mode, transmitters_and_users in users_per_mode_and_transmitter.items():
         Am = As[mode] = {}
         for t, users in transmitters_and_users.items():
@@ -44,10 +42,10 @@ def gen_test_network(n_rate_points_per_mode_and_transmitter=1, sample_function=n
 
     for t in wsr_transmitter_mode:
         R_m_t_s = {}
-        users = users_transmitter_mode[t]
+        users_mode = users_transmitter_mode[t]
         wsrs = wsr_transmitter_mode[t]
         for m in wsr_transmitter_mode[t]:
-            R_m_t_s = {m: R_m_t(users[m], wsrs[m]) for m in wsrs}
+            R_m_t_s = {m: R_m_t(users_mode[m], wsrs[m]) for m in wsrs}
 
         transmitters[t] = Transmitter(R_m_t_s, t)
     return As, Network(transmitters)

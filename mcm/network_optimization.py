@@ -1,5 +1,5 @@
 import logging
-from typing import Callable, Tuple, Optional, Union
+from typing import Callable, Tuple, Optional
 
 
 import cvxpy as cp
@@ -9,57 +9,59 @@ from mcm.network import Network
 from mcm.timesharing import time_sharing_cvx
 from mcm.regions import Q_vector, R_m_t_approx
 from mcm.no_utils import solve_problem, d_c_m_t_X_c_m_t
-from mcm.my_typing import Matrix, Util, Weights, Fractions, x_m_t, WSR
+from mcm.my_typing import Util_cvx, Weights, Fractions, x_m_t, WSR
 
 LOGGER = logging.getLogger(__name__)
 
 
-def wsr_for_A(weights: Weights, A: Matrix) -> Tuple[np.ndarray, np.ndarray]:
+def wsr_for_A(weights: Weights, A: np.ndarray) -> Tuple[float, np.ndarray]:
     max_i = np.argmax(weights @ A)
     rates = A[:, max_i]
-    return weights @ rates, rates
+    return float(weights @ rates), rates
 
 
-def I_C(A: Matrix) -> Callable[[Weights], Tuple[np.ndarray, np.ndarray]]:
-    return lambda weights: wsr_for_A(weights, A)
+def I_C(A: np.ndarray) -> Callable[[Weights], Tuple[float, np.ndarray]]:
+    def wsr(weights: Weights) -> Tuple[float, np.ndarray]:
+        return wsr_for_A(weights, A)
+    return wsr
 
 
-def I_C_Q(A: Matrix, Q: Q_vector) -> WSR:
+def I_C_Q(A: np.ndarray, Q: Q_vector) -> WSR:
     R = R_m_t_approx(A=A)
 
-    def I_C_Q(weights: Weights) -> Tuple[np.ndarray, np.ndarray]:
+    def I_C_Q(weights: Weights) -> Tuple[float, np.ndarray]:
         return time_sharing_cvx(weighted_sum_rate(weights), R, Q)
 
     return I_C_Q
 
 
-def weighted_sum_rate(weights: np.ndarray) -> Callable[[np.ndarray], Union[float, np.number]]:
-    def weighted_sum_rate(r: np.ndarray) -> float:
-        return float(np.inner(weights, r))
+def weighted_sum_rate(weights: np.ndarray) -> Util_cvx:
+    def weighted_sum_rate(r: cp.Variable) -> float:
+        return float(weights @ r)
 
     return weighted_sum_rate
 
 
-def proportional_fair(r: np.ndarray) -> cp.Expression:
-    return cp.sum(cp.log(r))  # type: ignore
+def proportional_fair(r: cp.Variable) -> Util_cvx:
+    return float(cp.sum(cp.log(r)))  # type: ignore
 
 
-def app_layer(weights: Weights) -> cp.Expression:
-    def app_layer(r: np.ndarray) -> cp.Expression:
-        return cp.atoms.affine.sum.Sum(cp.atoms.elementwise.log.log(r)) - weights @ r  # type: ignore
+def app_layer(weights: Weights) -> Util_cvx:
+    def app_layer(r: cp.Variable) -> float:
+        return float(cp.atoms.affine.sum.Sum(cp.atoms.elementwise.log.log(r)) - weights @ r)
 
     return app_layer
 
 
-def U_Q(util: Util, q: np.ndarray, Q: Q_vector) -> np.ndarray:
+def U_Q(util: Util_cvx, q: np.ndarray, Q: Q_vector) -> float:
     # U(q)
     if q not in Q:
         return -np.Inf
     else:
-        return util(q)
+        return float(util(cp.Variable(value=q)))
 
 
-def U_Q_conj(util: Util, weights: Weights, Q: Q_vector) -> Tuple[np.ndarray, np.ndarray]:
+def U_Q_conj(util: Util_cvx, weights: Weights, Q: Q_vector) -> Tuple[float, np.ndarray]:
     # max_q U(q) - la@q : q in Q
     q = cp.Variable(len(Q))
     cost_dual = util(q) - weights @ q
@@ -68,7 +70,7 @@ def U_Q_conj(util: Util, weights: Weights, Q: Q_vector) -> Tuple[np.ndarray, np.
     return prob.value, q.value
 
 
-def dual_problem_app_f(util: Util, weights_per_mode: dict[str, Weights], f: Fractions, Q: Q_vector) -> Tuple[np.number, np.ndarray, dict[str, np.ndarray]]:
+def dual_problem_app_f(util: Util_cvx, weights_per_mode: dict[str, Weights], f: Fractions, Q: Q_vector) -> Tuple[np.number, np.ndarray, dict[str, np.ndarray]]:
     # use K_conj(proportional_fair, Q[t.users], d_c_m, f = fractions)
     q = cp.Variable(len(Q))
     c_s = {m: cp.Variable(len(w), nonneg=True) for m, w in weights_per_mode.items()}
@@ -91,7 +93,7 @@ def dual_problem_app_f(util: Util, weights_per_mode: dict[str, Weights], f: Frac
     return prob_dual.value, q.value, {m: c.value for m, c in c_s.items()}
 
 
-def K_conj(util: Util, Q: Q_vector, la_m: dict[str, np.ndarray], f: Optional[Fractions] = None) -> Tuple[float, dict[str, np.ndarray]]:
+def K_conj(util: Util_cvx, Q: Q_vector, la_m: dict[str, np.ndarray], f: Optional[Fractions] = None) -> Tuple[float, dict[str, np.ndarray]]:
 
     q_m = {m: cp.Variable(len(la), nonneg=True) for m, la in la_m.items()}
     if f:
@@ -105,7 +107,7 @@ def K_conj(util: Util, Q: Q_vector, la_m: dict[str, np.ndarray], f: Optional[Fra
     return prob.value, {m: q.value for m, q in q_m.items()}
 
 
-def V(network: Network, util: Util, c_m_t: x_m_t, Q: Q_vector) -> Tuple[np.ndarray, np.ndarray, Fractions]:
+def V(network: Network, util: Util_cvx, c_m_t: x_m_t, Q: Q_vector) -> Tuple[np.ndarray, np.ndarray, Fractions]:
 
     c_m = {mode: np.zeros(len(network.users)) for mode in network.modes}
     f = {mode: cp.Variable(1, nonneg=True) for mode in network.modes}
@@ -125,11 +127,11 @@ def V(network: Network, util: Util, c_m_t: x_m_t, Q: Q_vector) -> Tuple[np.ndarr
     )
 
 
-def V_new(network: Network, util: Util, c_m_t: x_m_t, Q: Q_vector):
+def V_new(network: Network, util: Util_cvx, c_m_t: x_m_t, Q: Q_vector) -> Tuple[np.ndarray, np.ndarray, Fractions]:
 
     f = {mode: cp.Variable(1, nonneg=True) for mode in network.modes}
-    q_m_t = {m: {} for m in network.modes}
-    con_m_t = {m: {} for m in network.modes}
+    q_m_t: dict[str, dict[int, cp.Variable]] = {m: {} for m in network.modes}
+    con_m_t: dict[str, dict[int, cp.constraints.constraint.Constraint]] = {m: {} for m in network.modes}
     constraints = []
     # c_m_t = {m: {} for m in network.modes}
     q_t_sum = {}
@@ -162,7 +164,7 @@ def V_new(network: Network, util: Util, c_m_t: x_m_t, Q: Q_vector):
     )
 
 
-def V_conj(network: Network, util: Util, la_m_t: x_m_t, Q: Q_vector) -> Tuple[float, dict[str, dict[str, np.ndarray]]]:
+def V_conj(network: Network, util: Util_cvx, la_m_t: x_m_t, Q: Q_vector) -> Tuple[float, dict[str, dict[str, np.ndarray]]]:
 
     # q = np.zeros(len(Q))
     q_m_t = {m: {} for m in network.modes}
@@ -194,7 +196,7 @@ def V_conj(network: Network, util: Util, la_m_t: x_m_t, Q: Q_vector) -> Tuple[fl
     return v_opt_p - mm, c_m_t
 
 
-def optimize_app_phy(util: Util, Q: Q_vector, wsr_phy: WSR) -> Tuple[np.ScalarType, np.ndarray, np.ndarray, Tuple[np.ndarray, np.ndarray, np.ndarray, np.ScalarType]]:
+def optimize_app_phy(util: Util_cvx, Q: Q_vector, wsr_phy: WSR) -> Tuple[np.ScalarType, np.ndarray, np.ndarray, Tuple[np.ndarray, np.ndarray, np.ndarray, np.ScalarType]]:
 
     assert util == proportional_fair
     n_users = len(Q)

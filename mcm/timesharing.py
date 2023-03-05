@@ -6,14 +6,14 @@ from typing import Tuple, List
 
 from mcm.no_utils import InfeasibleOptimization, solve_problem
 from mcm.regions import Q_vector, R_m_t_approx
-from mcm.my_typing import Fractions, R_m, Util, x_m_t
+from mcm.my_typing import Fractions, Util_cvx
 from mcm.network import Network
 
 LOGGER = logging.getLogger(__name__)
 
 
-def check_feasible(f: Fractions, R_m: R_m, Q: Q_vector) -> None:
-    if all(f[m] < 1e-3 for m in R_m):
+def check_feasible(f: Fractions, Q: Q_vector) -> None:
+    if all(t < 1e-3 for t in f.values()):
         LOGGER.warning("no resources allocated")
         if Q.q_min and any(Q.q_min >= 0):
             raise InfeasibleOptimization("no resources allocated")
@@ -21,16 +21,16 @@ def check_feasible(f: Fractions, R_m: R_m, Q: Q_vector) -> None:
             raise NotImplementedError("no resources allocated - needs manual handling")
 
 
-def time_sharing_cvx(cost_function: Util, R: R_m_t_approx, Q: Q_vector) -> Tuple[np.ndarray, np.ndarray]:
+def time_sharing_cvx(cost_function: Util_cvx, R: R_m_t_approx, Q: Q_vector) -> Tuple[float, np.ndarray]:
 
     r = cp.Variable(len(Q), pos=True)
     cons = R.cons_in_approx(r) + Q.constraints(r)
     prob = solve_problem(cp.Maximize(cost_function(r)), cons)
-    return (prob.value, r.value)
+    return prob.value, r.value
 
 
-def F_t_R_approx(cost_function: Util, f: Fractions, users: List[int], R_m: dict[str, R_m_t_approx], Q: Q_vector) -> Tuple[float, dict[int, float]]:
-    check_feasible(f, R_m, Q)
+def F_t_R_approx(cost_function: Util_cvx, f: Fractions, users: List[int], R_m: dict[str, R_m_t_approx], Q: Q_vector) -> Tuple[float, dict[int, float]]:
+    check_feasible(f, Q)
     c_m = {}
     cons = []
     for mode, R in R_m.items():
@@ -45,7 +45,7 @@ def F_t_R_approx(cost_function: Util, f: Fractions, users: List[int], R_m: dict[
 
 
 def F_t_R_approx_conj(
-    cost_function: Util, la: dict[str, np.ndarray], users: List[int], R_m: dict[str, R_m_t_approx], Q: Q_vector
+    cost_function: Util_cvx, la: dict[str, np.ndarray], users: List[int], R_m: dict[str, R_m_t_approx], Q: Q_vector
 ) -> Tuple[np.ndarray, dict[int, np.ndarray], Fractions]:
 
     f = {m: cp.Variable(1, nonneg=True) for m in la}
@@ -71,27 +71,27 @@ def F_t_R_approx_conj(
     )
 
 
-def timesharing_network(cost_function: Util, network: Network, Q: Q_vector) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+def timesharing_network(cost_function: Util_cvx, network: Network, Q: Q_vector) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
 
     f = {m: cp.Variable(1, nonneg=True) for m in network.modes}
     n_users = len(network.users)
     r = cp.Variable(n_users, nonneg=True)
     transmitters = network.transmitters
-    c_t_m: x_m_t = {t: {} for t in transmitters}
+    c_t_m: dict[int, dict[str, np.ndarray]] = {t: {} for t in transmitters}
 
     cons = []
-    for t in transmitters:
+    for t_id, t in transmitters.items():
         for mode, R in t.R_m_t_s.items():
             R_a = R.approx
             cons += R_a.cons_in_approx(sum_alphas=f[mode])
-            c_t_m[t][mode] = R.c
+            c_t_m[t_id][mode] = R_a.c
 
     # TODO cost function per transmitter should be more elegant
     r_constraints = {}
-    for t in transmitters:
+    for t_id, t in transmitters.items():
         for user_index, user in enumerate(t.users):
             r_constraints[user] = r[user] == cp.sum(
-                [c_m[user_index] for c_m in c_t_m[t].values()]
+                [c_m[user_index] for c_m in c_t_m[t_id].values()]
             )
 
     cons += list(r_constraints.values())
