@@ -25,7 +25,7 @@ from mcm.timesharing import (
 from mcm.regions import Q_vector, R_m_t_approx
 from mcm.network import Network
 from .utils import gen_test_network
-from mcm.my_typing import A_m_t, Util_cvx
+from mcm.my_typing import a_m_t, Util_cvx
 from typing import Tuple
 
 
@@ -74,7 +74,7 @@ def test_timesharing_wsr() -> None:
         _, rates = time_sharing_cvx(weighted_sum_rate(weights), R, Q)
 
 
-def test_timesharing_fair(A: Matrix) -> None:
+def test_timesharing_fair(A: np.ndarray) -> None:
 
     n_users = A.shape[0]
     q_min = np.array([0.1] * n_users)
@@ -173,7 +173,7 @@ def test_F_t_R_approx():
         sum(fractions[m] * l for m, l in la.items()) == pytest.approx(value_2 - value_d)
 
 
-def network_and_random_duals() -> Tuple[Network, Q_vector, A_m_t]:
+def network_and_random_duals() -> Tuple[Network, Q_vector, a_m_t]:
     As, network = gen_test_network(20, np.random.random)
     q_min = np.array([0.05] * 30)
     q_max = np.array([20.0] * 30)

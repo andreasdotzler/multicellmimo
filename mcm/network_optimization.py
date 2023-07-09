@@ -9,7 +9,7 @@ from mcm.network import Network
 from mcm.timesharing import time_sharing_cvx
 from mcm.regions import Q_vector, R_m_t_approx
 from mcm.no_utils import solve_problem, d_c_m_t_X_c_m_t
-from mcm.my_typing import Util_cvx, Weights, Fractions, x_m_t, WSR
+from mcm.my_typing import Util_cvx, Weights, Fractions, x_m_t, a_m_t, WSR
 
 LOGGER = logging.getLogger(__name__)
 
@@ -43,7 +43,9 @@ def weighted_sum_rate(weights: np.ndarray) -> Util_cvx:
 
 
 def proportional_fair(r: cp.Variable) -> Util_cvx:
-    return float(cp.sum(cp.log(r)))  # type: ignore
+    def pf(r: cp.Variable) -> float:
+        return float(cp.sum(cp.log(r)))
+    return pf
 
 
 def app_layer(weights: Weights) -> Util_cvx:
@@ -118,7 +120,7 @@ def V(network: Network, util: Util_cvx, c_m_t: x_m_t, Q: Q_vector) -> Tuple[np.n
 
     constraints = [cp.sum(list(f.values())) == 1] + Q.constraints(q_sum)
     prob = cp.Problem(cp.Maximize(util(q_sum)), constraints)
-    prob.solve()
+    prob.solve()  # type: ignore
     assert "optimal" in prob.status, f"Optimization failed: {prob.status}"
     return (
         prob.value,
@@ -127,7 +129,7 @@ def V(network: Network, util: Util_cvx, c_m_t: x_m_t, Q: Q_vector) -> Tuple[np.n
     )
 
 
-def V_new(network: Network, util: Util_cvx, c_m_t: x_m_t, Q: Q_vector) -> Tuple[np.ndarray, np.ndarray, Fractions]:
+def V_new(network: Network, util: Util_cvx, c_m_t: x_m_t, Q: Q_vector) -> Tuple[np.ndarray, np.ndarray, Fractions, dict[str, dict[int, np.ndarray]]]:
 
     f = {mode: cp.Variable(1, nonneg=True) for mode in network.modes}
     q_m_t: dict[str, dict[int, cp.Variable]] = {m: {} for m in network.modes}
@@ -147,7 +149,7 @@ def V_new(network: Network, util: Util_cvx, c_m_t: x_m_t, Q: Q_vector) -> Tuple[
         constraints += Q[t.users].constraints(q_t_sum[t_id])
     util = cp.sum([util(q_t) for q_t in q_t_sum.values()])
     prob = cp.Problem(cp.Maximize(util), constraints)
-    prob.solve()
+    prob.solve()  # type: ignore
     q = np.zeros(len(network.users))
     for t_id, t in network.transmitters.items():
         q[t.users] += q_t_sum[t_id].value
@@ -167,9 +169,9 @@ def V_new(network: Network, util: Util_cvx, c_m_t: x_m_t, Q: Q_vector) -> Tuple[
 def V_conj(network: Network, util: Util_cvx, la_m_t: x_m_t, Q: Q_vector) -> Tuple[float, dict[str, dict[str, np.ndarray]]]:
 
     # q = np.zeros(len(Q))
-    q_m_t = {m: {} for m in network.modes}
-    v_opt = 0
-    q_t = {}
+    q_m_t: a_m_t = {m: {} for m in network.modes}
+    v_opt = 0.0
+    q_t: dict[str, np.ndarray] = {}
     for t_id, t in network.transmitters.items():
         val, q_t = K_conj(util, Q[t.users], {m: la_m_t[m][t_id] for m in t.modes})
         for m, q in q_t.items():
@@ -178,9 +180,9 @@ def V_conj(network: Network, util: Util_cvx, la_m_t: x_m_t, Q: Q_vector) -> Tupl
     s = {}
     for m, la_t in la_m_t.items():
         s[m] = 0
-        for t, la in la_t.items():
-            s[m] += la @ q_m_t[m][t]
-    c_m_t = {}
+        for t_id, la in la_t.items():
+            s[m] += la @ q_m_t[m][t_id]
+    c_m_t: a_m_t = {}
     d_sum = sum(s.values())
     for m, q_t in q_m_t.items():
         c_m_t[m] = {}

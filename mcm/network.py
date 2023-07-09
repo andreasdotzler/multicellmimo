@@ -3,7 +3,7 @@ import numpy as np
 
 from typing import Optional, Tuple, Any, Dict, List, Set
 from mcm.transmitter import Transmitter
-from mcm.my_typing import A_m_t, Fractions, Weights, x_m_t
+from mcm.my_typing import a_m_t, Fractions, Weights, x_m_t
 from mcm.regions import Q_vector
 from mcm.no_utils import solve_problem
 
@@ -51,7 +51,7 @@ class Network:
                     return np.Inf
         return 0
 
-    def initialize_approximation(self, As: A_m_t) -> None:
+    def initialize_approximation(self, As: a_m_t) -> None:
         for mode, trans_and_At in As.items():
             for trans, At in trans_and_At.items():
                 self.transmitters[trans].set_approximation(mode, At)
@@ -73,9 +73,9 @@ class Network:
 
     def wsr_per_mode_and_transmitter(
         self, weights: Optional[Weights] = None
-    ) -> Tuple[x_m_t, A_m_t]:
+    ) -> Tuple[x_m_t, a_m_t]:
         values: x_m_t = {}
-        A_max: A_m_t = {}
+        A_max: a_m_t = {}
 
         test: Dict[int, str] = {}
         test[1] = "dwd"

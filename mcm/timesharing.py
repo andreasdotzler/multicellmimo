@@ -77,7 +77,7 @@ def timesharing_network(cost_function: Util_cvx, network: Network, Q: Q_vector) 
     n_users = len(network.users)
     r = cp.Variable(n_users, nonneg=True)
     transmitters = network.transmitters
-    c_t_m: dict[int, dict[str, np.ndarray]] = {t: {} for t in transmitters}
+    c_t_m: dict[int, dict[str, cp.Variable]] = {t: {} for t in transmitters}
 
     cons = []
     for t_id, t in transmitters.items():
