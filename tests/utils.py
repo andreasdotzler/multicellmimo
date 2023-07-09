@@ -1,14 +1,14 @@
 import numpy as np
 
 from typing import Callable, Tuple
-from mcm.my_typing import Weights
+from mcm.my_typing import Weights, a_m_t
 from mcm.network_optimization import I_C
 from mcm.network import Network
 from mcm.transmitter import Transmitter
 from mcm.regions import R_m_t
 
 
-def gen_test_network(n_rate_points_per_mode_and_transmitter: int = 1, sample_function: Callable[[Tuple[int, int]], np.ndarray] = np.ones) -> Tuple[dict[str, dict[int, np.ndarray]], Network]:
+def gen_test_network(n_rate_points_per_mode_and_transmitter: int = 1, sample_function: Callable[[Tuple[int, int]], np.ndarray] = np.ones) -> Tuple[a_m_t, Network]:
     users_per_mode_and_transmitter = {
         "reuse1": {
             0: list(range(0, 10)),

@@ -3,7 +3,7 @@ import numpy as np
 
 from typing import Optional, Tuple, Any, Dict, List, Set
 from mcm.transmitter import Transmitter
-from mcm.my_typing import a_m_t, Fractions, Weights, x_m_t
+from mcm.my_typing import a_m_t, Fractions, Weights, x_m_t, f_m_t
 from mcm.regions import Q_vector
 from mcm.no_utils import solve_problem
 
@@ -64,7 +64,7 @@ class Network:
         max_value = -np.Inf
         mode_values, A_m = self.wsr_per_mode_and_transmitter(weights)
         w_m = {m: sum(w_m_t.values()) for m, w_m_t in mode_values.items()}
-        max_mode, max_value = max(w_m.items(), key=lambda k: k[1])
+        max_mode, max_value = max(w_m.items(), key=lambda k: float(k[1]))
         max_rates = np.zeros(len(weights))
         for transmitter_id, rates in A_m[max_mode].items():
             max_rates[self.transmitters[transmitter_id].users] += rates
@@ -73,8 +73,8 @@ class Network:
 
     def wsr_per_mode_and_transmitter(
         self, weights: Optional[Weights] = None
-    ) -> Tuple[x_m_t, a_m_t]:
-        values: x_m_t = {}
+    ) -> Tuple[f_m_t, a_m_t]:
+        values: f_m_t = {}
         A_max: a_m_t = {}
 
         test: Dict[int, str] = {}

@@ -4,7 +4,6 @@ import random
 import numpy as np
 import pytest
 
-from .context import mcm
 
 from mcm.mimo_worst_case_noise import (
     ptp_worst_case_noise_approx,
@@ -108,7 +107,7 @@ def test_minimax_fixed_fixed(Ms_antennas, Bs_antennas, B, C, H, P, sigma, comp):
     X = eye(3) + inv_sqrtm(C) @ sqrtm(C) @ inv_sqrtm((Omega_prime)) @ sqrtm(
         C
     ) @ H.conj().T @ Sigma_s @ H @ sqrtm(C) @ pinv_sqrtm(Omega_prime)
-    X_l = C + sqrtm(C) @ inv_sqrtm(sqrtm(C) @ Omega_s @ sqrtm(C)) @ sqrtm(
+    C + sqrtm(C) @ inv_sqrtm(sqrtm(C) @ Omega_s @ sqrtm(C)) @ sqrtm(
         C
     ) @ H.conj().T @ Sigma_s @ H @ sqrtm(C) @ inv_sqrtm(
         sqrtm(C) @ Omega_s @ sqrtm(C)
@@ -277,7 +276,7 @@ def test_minimax_opt_opt(Ms_antennas, Bs_antennas, B, C, H, P, sigma, comp):
 @pytest.mark.parametrize("P", [1.3])
 def test_minimax_fixed_opt(Ms_antennas, Bs_antennas, B, C, H, P, sigma, comp):
     p = c = np.trace(C @ C)
-    n = b = np.trace(B @ B)
+    n = np.trace(B @ B)
     # Downlink fixed noise, downlink optim covariance, uplink fixed noise, optim covariance
     r_d_f_o, Q_eff = ptp_capacity(H @ inv_sqrtm(C), np.trace(C @ C), B)
     assert np.trace(inv_sqrtm(C) @ Q_eff @ inv_sqrtm(C) @ C) == pytest.approx(c, 1e-3)
@@ -299,8 +298,8 @@ def test_minimax_fixed_opt(Ms_antennas, Bs_antennas, B, C, H, P, sigma, comp):
 @pytest.mark.parametrize("sigma", [1.2])
 @pytest.mark.parametrize("P", [1.3])
 def test_minimax_opt_fixed(Ms_antennas, Bs_antennas, B, C, H, P, sigma, comp):
-    p = c = np.trace(C @ C)
-    n = b = np.trace(B @ B)
+    p = np.trace(C @ C)
+    n = np.trace(B @ B)
     # Downlink optim noise, downlink fixed covariance, uplink optim noise, fixed covariance
     r_d_o_f, R = ptp_worst_case_noise_static(
         H @ C @ H.conj().T, np.trace(B @ B), precision=1e-4

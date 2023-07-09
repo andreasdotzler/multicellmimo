@@ -4,7 +4,6 @@ import itertools
 import numpy as np
 import pytest
 
-from .context import mcm
 
 from mcm.mimo import (
     MAC,
@@ -84,9 +83,8 @@ def test_MAC_rate_formulation(Ms_antennas_list, Bs_antennas, H_MAC, C):
     HCH1 = Hs[1].conj().T @ Covs[1] @ Hs[1]
     HCH2 = Hs[2].conj().T @ Covs[2] @ Hs[2]
 
-    IPN0 = Noise
-    IPN1 = Noise + HCH0
-    IPN1 = Noise + HCH0 + HCH1
+    Noise + HCH0
+    Noise + HCH0 + HCH1
 
     r0_c = logdet(I + np.linalg.inv(Noise) @ HCH0)
     r0_d = logdet(Noise + HCH0) - logdet(Noise)
@@ -294,7 +292,7 @@ def test_MACtoBCtransformation(MAC_fun, Ms_antennas_list, Bs_antennas):
         mac_rates_calc = MAC_rates(MAC_Covs, MAC_Hs, MAC_decoding_order)
         assert mac_rates == pytest.approx(mac_rates_calc, 1e-3)
         # broadcast, highest weight is encoded first, lowest weight sees no interference
-        enc_last = MAC_decoding_order[0]
+        MAC_decoding_order[0]
 
         LOGGER.info(f"MAC decoding order: {MAC_decoding_order}")
         BC_Cov_trans = MACtoBCtransformation(Hs, MAC_Covs, MAC_decoding_order)
@@ -303,7 +301,7 @@ def test_MACtoBCtransformation(MAC_fun, Ms_antennas_list, Bs_antennas):
         BC_Cov_trans_inv = MACtoBCtransformation(
             Hs, MAC_Covs, list(reversed(MAC_decoding_order))
         )
-        rates_BC_calc_inv = BC_rates(BC_Cov_trans_inv, Hs, MAC_decoding_order)
+        BC_rates(BC_Cov_trans_inv, Hs, MAC_decoding_order)
 
 
 @pytest.mark.parametrize("P", range(10))

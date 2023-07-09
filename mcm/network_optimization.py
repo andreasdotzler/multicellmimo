@@ -1,57 +1,54 @@
+from __future__ import annotations
 import logging
-from typing import Callable, Tuple, Optional
+from typing import Tuple, Optional, cast
 
 
 import cvxpy as cp
 import numpy as np
-from mcm.network import Network
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from mcm.network import Network
 
 from mcm.timesharing import time_sharing_cvx
-from mcm.regions import Q_vector, R_m_t_approx
+from mcm.regions import Q_vector, R_m_t_approx, Q_vector_bounded
 from mcm.no_utils import solve_problem, d_c_m_t_X_c_m_t
-from mcm.my_typing import Util_cvx, Weights, Fractions, x_m_t, a_m_t, WSR
+from mcm.my_typing import Util_cvx, Weights, Fractions, x_m_t, a_m_t, WSR, Algorithm_Result
 
 LOGGER = logging.getLogger(__name__)
 
 
-def wsr_for_A(weights: Weights, A: np.ndarray) -> Tuple[float, np.ndarray]:
+def wsr_for_A(weights: Weights, A: np.ndarray) -> Algorithm_Result:
     max_i = np.argmax(weights @ A)
     rates = A[:, max_i]
-    return float(weights @ rates), rates
+    return weights @ rates, rates
 
 
-def I_C(A: np.ndarray) -> Callable[[Weights], Tuple[float, np.ndarray]]:
-    def wsr(weights: Weights) -> Tuple[float, np.ndarray]:
+def I_C(A: np.ndarray) -> WSR:
+    def wsr(weights: Weights) -> Algorithm_Result:
         return wsr_for_A(weights, A)
     return wsr
 
 
 def I_C_Q(A: np.ndarray, Q: Q_vector) -> WSR:
     R = R_m_t_approx(A=A)
-
-    def I_C_Q(weights: Weights) -> Tuple[float, np.ndarray]:
-        return time_sharing_cvx(weighted_sum_rate(weights), R, Q)
-
+    def I_C_Q(weights: Weights) -> Algorithm_Result:
+        return time_sharing_cvx(gen_wsr_util(weights), R, Q)
     return I_C_Q
 
 
-def weighted_sum_rate(weights: np.ndarray) -> Util_cvx:
-    def weighted_sum_rate(r: cp.Variable) -> float:
-        return float(weights @ r)
-
+def gen_wsr_util(weights: np.ndarray) -> Util_cvx:
+    def weighted_sum_rate(r: cp.Variable) -> cp.Expression:
+        return cast(cp.Expression, weights @ r)
     return weighted_sum_rate
 
 
-def proportional_fair(r: cp.Variable) -> Util_cvx:
-    def pf(r: cp.Variable) -> float:
-        return float(cp.sum(cp.log(r)))
-    return pf
+def proportional_fair(r: cp.Variable) -> cp.Expression:
+    return cast(cp.Expression, cp.sum(cp.log(r)))
 
 
 def app_layer(weights: Weights) -> Util_cvx:
-    def app_layer(r: cp.Variable) -> float:
-        return float(cp.atoms.affine.sum.Sum(cp.atoms.elementwise.log.log(r)) - weights @ r)
-
+    def app_layer(r: cp.Variable) -> cp.Expression:
+        return cast(cp.Expression, cp.sum(cp.log(r)) - weights @ r)
     return app_layer
 
 
@@ -60,7 +57,7 @@ def U_Q(util: Util_cvx, q: np.ndarray, Q: Q_vector) -> float:
     if q not in Q:
         return -np.Inf
     else:
-        return float(util(cp.Variable(value=q)))
+        return float(util(cp.Variable(len(q), value=q)).value)
 
 
 def U_Q_conj(util: Util_cvx, weights: Weights, Q: Q_vector) -> Tuple[float, np.ndarray]:
@@ -129,7 +126,7 @@ def V(network: Network, util: Util_cvx, c_m_t: x_m_t, Q: Q_vector) -> Tuple[np.n
     )
 
 
-def V_new(network: Network, util: Util_cvx, c_m_t: x_m_t, Q: Q_vector) -> Tuple[np.ndarray, np.ndarray, Fractions, dict[str, dict[int, np.ndarray]]]:
+def V_new(network: Network, util: Util_cvx, c_m_t: x_m_t, Q: Q_vector) -> Tuple[np.number, np.ndarray, Fractions, dict[str, dict[int, np.ndarray]]]:
 
     f = {mode: cp.Variable(1, nonneg=True) for mode in network.modes}
     q_m_t: dict[str, dict[int, cp.Variable]] = {m: {} for m in network.modes}
@@ -166,8 +163,7 @@ def V_new(network: Network, util: Util_cvx, c_m_t: x_m_t, Q: Q_vector) -> Tuple[
     )
 
 
-def V_conj(network: Network, util: Util_cvx, la_m_t: x_m_t, Q: Q_vector) -> Tuple[float, dict[str, dict[str, np.ndarray]]]:
-
+def V_conj(network: Network, util: Util_cvx, la_m_t: x_m_t, Q: Q_vector) -> Tuple[float, a_m_t]:
     # q = np.zeros(len(Q))
     q_m_t: a_m_t = {m: {} for m in network.modes}
     v_opt = 0.0
@@ -184,13 +180,13 @@ def V_conj(network: Network, util: Util_cvx, la_m_t: x_m_t, Q: Q_vector) -> Tupl
             s[m] += la @ q_m_t[m][t_id]
     c_m_t: a_m_t = {}
     d_sum = sum(s.values())
-    for m, q_t in q_m_t.items():
+    for m, q_tt in q_m_t.items():
         c_m_t[m] = {}
-        for t, q in q_t.items():
+        for tt, q in q_tt.items():
             if s[m] > 0:
-                c_m_t[m][t] = q * d_sum / s[m]
+                c_m_t[m][tt] = q * d_sum / s[m]
             else:
-                c_m_t[m][t] = q * 0
+                c_m_t[m][tt] = q * 0
 
     v_opt_p, _, _, _ = V_new(network, proportional_fair, c_m_t, Q)
     mm = d_c_m_t_X_c_m_t(la_m_t, c_m_t)
@@ -198,7 +194,7 @@ def V_conj(network: Network, util: Util_cvx, la_m_t: x_m_t, Q: Q_vector) -> Tupl
     return v_opt_p - mm, c_m_t
 
 
-def optimize_app_phy(util: Util_cvx, Q: Q_vector, wsr_phy: WSR) -> Tuple[np.ScalarType, np.ndarray, np.ndarray, Tuple[np.ndarray, np.ndarray, np.ndarray, np.ScalarType]]:
+def optimize_app_phy(util: Util_cvx, Q: Q_vector_bounded, wsr_phy: WSR) -> Tuple[np.number, np.ndarray, np.ndarray, Tuple[np.ndarray, np.ndarray, np.ndarray, np.number]]:
 
     assert util == proportional_fair
     n_users = len(Q)
@@ -234,4 +230,21 @@ def optimize_app_phy(util: Util_cvx, Q: Q_vector, wsr_phy: WSR) -> Tuple[np.Scal
         )
         if gap < 0.001:
             break
-    return approx_value, q, alpha, [la, w_min, w_max, mu]
+
+        assert approx_value is not None
+        assert q is not None
+        assert alpha.value is not None
+        assert la is not None
+        assert w_min is not None
+        assert w_max is not None
+        assert mu is not None
+    return approx_value, q, cast(np.ndarray, alpha.value), (la, w_min, w_max, mu)
+
+def test() -> Optional[np.ndarray]:
+    return np.array([1, 2, 3])
+
+def test2() -> np.ndarray:
+    a = test()
+    assert a is not None
+    return a
+

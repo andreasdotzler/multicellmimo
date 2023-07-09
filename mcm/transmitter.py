@@ -1,7 +1,7 @@
 import numpy as np
 import cvxpy as cp
 
-from typing import Any, Callable, Optional, Tuple
+from typing import Any, Callable, Optional, Tuple, cast
 from mcm.timesharing import F_t_R_approx
 from mcm.network_optimization import U_Q_conj
 from mcm.regions import Q_vector, R_m_t, R_m_t_approx
@@ -10,7 +10,7 @@ from mcm.my_typing import Fractions, Weights, Util_cvx
 
 class Transmitter:
     def __init__(
-            self, R_m_t_s: dict[str, R_m_t], id: int, util: Util_cvx = None, Q: Q_vector = None):
+            self, R_m_t_s: dict[str, R_m_t], id: int, util: Optional[Util_cvx] = None, Q: Optional[Q_vector] = None):
         self.id = id
         self.users_per_mode: dict[str, list[int]] = {
             m: R.users for m, R in R_m_t_s.items()
@@ -28,8 +28,8 @@ class Transmitter:
         self.modes = list(R_m_t_s.keys())
         self.R_m_t_s = R_m_t_s
         if util is None:
-            def const_minus_inf(r: cp.Variable) -> float:
-                return - np.Inf
+            def const_minus_inf(r: cp.Variable) -> cp.Expression:
+                return cast(cp.Expression, - np.Inf)
             util = const_minus_inf
         self.util = util
         assert Q is None or len(Q) == len(self.users)
@@ -87,7 +87,7 @@ class Transmitter:
                 ell / (ell + 1) * self.average_transmit_rate + 1 / (ell + 1) * c_t_l_1
             )
 
-        primal_value = self.util(cp.Variable(value=self.average_transmit_rate))
+        primal_value = self.util(cp.Variable(value=self.average_transmit_rate)).value
         self.iteration += 1
 
         return primal_value, v_app + v_phy

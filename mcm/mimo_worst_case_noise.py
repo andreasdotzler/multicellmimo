@@ -59,7 +59,7 @@ def ptp_capacity_minimax(
             z, cp.Parameter(shape=(Ntx, Ntx), value=ZZ, hermitian=True)
         )
 
-    cost = cp.log_det(
+    cp.log_det(
         np.eye(Nrx) + sqrtm(R_pinv.value) @ H @ Q @ H.conj().T @ sqrtm(R_pinv.value)
     )
     shape = Q << aC + Z

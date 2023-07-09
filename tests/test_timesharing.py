@@ -8,7 +8,7 @@ from mcm.network_optimization import (
     V_new,
     optimize_app_phy,
     proportional_fair,
-    weighted_sum_rate,
+    gen_wsr_util,
     wsr_for_A,
 )
 from mcm.no_utils import (
@@ -29,7 +29,7 @@ from mcm.my_typing import a_m_t, Util_cvx
 from typing import Tuple
 
 
-@pytest.mark.parametrize("util", (proportional_fair, weighted_sum_rate(np.ones(10))))
+@pytest.mark.parametrize("util", (proportional_fair, gen_wsr_util(np.ones(10))))
 def test_U_Q(util: Util_cvx) -> None:
 
     Q = Q_vector(q_min=np.zeros(10), q_max=np.ones(10))
@@ -48,30 +48,30 @@ def test_timesharing_wsr() -> None:
     R = R_m_t_approx(list(range(0, n_users)), A)
 
     weights = np.array([1, 0])
-    _, rates = time_sharing_cvx(weighted_sum_rate(weights), R, Q)
+    _, rates = time_sharing_cvx(gen_wsr_util(weights), R, Q)
     assert rates.tolist() == pytest.approx([4, 1], 1e-3)
 
     weights = np.array([0, 1])
-    _, rates = time_sharing_cvx(weighted_sum_rate(weights), R, Q)
+    _, rates = time_sharing_cvx(gen_wsr_util(weights), R, Q)
     assert rates.tolist() == pytest.approx([1, 2], 1e-3)
 
     weights = np.array([1, 1])
-    _, rates = time_sharing_cvx(weighted_sum_rate(weights), R, Q)
+    _, rates = time_sharing_cvx(gen_wsr_util(weights), R, Q)
     assert rates.tolist() == pytest.approx([4, 1], 1e-3)
 
     Q.q_min = np.array([0, 2])
-    _, rates = time_sharing_cvx(weighted_sum_rate(weights), R, Q)
+    _, rates = time_sharing_cvx(gen_wsr_util(weights), R, Q)
     assert rates.tolist() == pytest.approx([1, 2], 1e-3)
 
     Q.q_min = np.array([0, 0])
     Q.q_max = np.array([2, 2])
-    _, rates = time_sharing_cvx(weighted_sum_rate(weights), R, Q)
+    _, rates = time_sharing_cvx(gen_wsr_util(weights), R, Q)
     assert rates.tolist() == pytest.approx([2, 1 + 2 / 3])
 
     Q.q_min = np.array([0, 0])
     Q.q_max = np.array([0.5, 0])
     with pytest.raises(InfeasibleOptimization):
-        _, rates = time_sharing_cvx(weighted_sum_rate(weights), R, Q)
+        _, rates = time_sharing_cvx(gen_wsr_util(weights), R, Q)
 
 
 def test_timesharing_fair(A: np.ndarray) -> None:
@@ -220,11 +220,11 @@ def test_fixed_f():
     # V*(la_c_m_t)
     V_conj_c_m_t, _ = V_conj(network, proportional_fair, d_c_m_t, Q)
     # I*(la_c_m_t)
-    I_conj_c_m_t = 0
+    I_conj_c_m_t = 0.0
     for t_id, t in network.transmitters.items():
         for m in t.modes:
             v, r = t.wsr(d_c_m_t[m][t_id], m)
-            v == pytest.approx(d_c_m_t[m][t_id] @ c_m_t[m][t_id], 1e-3)
+            assert v == pytest.approx(d_c_m_t[m][t_id] @ c_m_t[m][t_id], 1e-3)
             I_conj_c_m_t += v
     assert V_conj_c_m_t + I_conj_c_m_t == pytest.approx(value, 1e-3)
 

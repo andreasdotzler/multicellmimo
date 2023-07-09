@@ -1,6 +1,5 @@
 import logging
 import numpy as np
-import pytest
 
 from mcm.network import Network
 from mcm.timesharing import timesharing_network

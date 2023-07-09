@@ -1,3 +1,4 @@
+from __future__ import annotations
 import numpy as np
 import cvxpy as cp
 import logging
@@ -6,8 +7,13 @@ from typing import Tuple, List
 
 from mcm.no_utils import InfeasibleOptimization, solve_problem
 from mcm.regions import Q_vector, R_m_t_approx
-from mcm.my_typing import Fractions, Util_cvx
-from mcm.network import Network
+from mcm.my_typing import Fractions, Util_cvx, Algorithm_Result
+
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from mcm.network import Network
+
 
 LOGGER = logging.getLogger(__name__)
 
@@ -21,7 +27,7 @@ def check_feasible(f: Fractions, Q: Q_vector) -> None:
             raise NotImplementedError("no resources allocated - needs manual handling")
 
 
-def time_sharing_cvx(cost_function: Util_cvx, R: R_m_t_approx, Q: Q_vector) -> Tuple[float, np.ndarray]:
+def time_sharing_cvx(cost_function: Util_cvx, R: R_m_t_approx, Q: Q_vector) -> Algorithm_Result:
 
     r = cp.Variable(len(Q), pos=True)
     cons = R.cons_in_approx(r) + Q.constraints(r)

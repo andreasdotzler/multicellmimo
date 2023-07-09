@@ -2,7 +2,6 @@ import pytest
 import numpy as np
 import logging
 
-from .context import mcm
 from mcm.mimo_utils import eye
 
 LOGGER = logging.getLogger(__name__)
